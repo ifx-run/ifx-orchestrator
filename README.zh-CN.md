@@ -15,4 +15,13 @@ Solana **execution orchestrator / venue hub**：把外部给定的 hops 编成�
 
 **首期语言：Go**（`ifx/go-sdk`）；Rust / TS 镜像后置。
 
+## 现状（Phase 0）
+
+框架核心已落地：`AmountFlow`、`ExactInHop`、`compile`、`router`、`venue/mock`。
+
+```bash
+go test ./...
+go run ./examples/mock_two_hop/
+```
+
 设计全文见 [docs/design.zh-CN.md](./docs/design.zh-CN.md)。
