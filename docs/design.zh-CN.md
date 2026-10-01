@@ -6,7 +6,7 @@
 
 本仓不是路径求解器，也不是链上 router。它把「聚合器 / router 合约」在链上做的事，用 **ifx 原语在后端**重做一遍：给定已排好序的边（hops）+ 账户上下文，编译成可执行的 ifx plan / tx。
 
-对比 Jupiter 合约：**同样开箱即用**（fluent `Router`），但 **venue / feature / 生命周期策略可插拔**，定制不必 fork 整条死板路径。
+对比 Jupiter 合约：**同样开箱即用**（fluent `orchestrator.Builder`），但 **venue / feature / 生命周期策略可插拔**，定制不必 fork 整条死板路径。
 
 语言选定 **Go 先行**（后端使用最多；对齐 `ifx/go-sdk` 与已有 `ifx-launchpad-orchestrator`）。Rust / TS 镜像后置。
 
@@ -102,7 +102,7 @@ func AutoWith(b RentLiquidityBackend) Feature
 开箱：
 
 ```go
-router.New(frame).
+orchestrator.New(frame).
     AtaPolicy(ata.CreateAndCloseCreated).
     Feature(flashrent.Auto()). // ≡ Jupiter Flash Fill
     // Feature(flashrent.AutoWith(CustomRentLiquidity{Borrow: …, Repay: …})).
@@ -218,7 +218,7 @@ type RentLiquidityBackend interface {
 开箱 API（线性糖；贴近你拍的 Builder 幻想）：
 
 ```go
-plan, err := router.New(frame).
+plan, err := orchestrator.New(frame).
     AmountIn(1_000_000).
     MinAmountOut(900_000).
     AtaPolicy(ata.CreateAndCloseCreated).
@@ -233,7 +233,7 @@ plan, err := router.New(frame).
     Build()
 ```
 
-进阶：`router.FromGraph(nodes, edges, features)` —— 支持 split，无需换框架。
+进阶：`orchestrator.FromGraph(nodes, edges, features)` —— 支持 split，无需换框架。
 
 ## 仓库骨架（Go）
 
@@ -241,7 +241,7 @@ plan, err := router.New(frame).
 ifx-orchestrator/
   go.mod                     # module github.com/ifx-run/ifx-orchestrator
   README.md
-  router/                    # Builder 门面
+  orchestrator/             # Builder 门面
   compile/                   # RouteCompiler + CompileCtx + AmountFlow
   hop/                       # ExactInHop, HopBlueprint, PatchSite, SplitBps, Node/Edge
   feature/                   # Feature 接口 + 内置桩（Ata/FlashRent/…）
@@ -262,7 +262,7 @@ ifx-orchestrator/
 
 ### Phase 0 — 框架 + mock（第一刀）
 
-1. `go mod` + 核心包：`SplitBps`、`RouteNode`/`RouteEdge`、`AmountFlow`、`HopBlueprint`/`PatchSite`、`ExactInHop`、`Feature`、`compile`、`router`
+1. `go mod` + 核心包：`SplitBps`、`RouteNode`/`RouteEdge`、`AmountFlow`、`HopBlueprint`/`PatchSite`、`ExactInHop`、`Feature`、`compile`、`orchestrator`
 2. 线性 `.Hop()` 糖内部建 path；`AmountFlow` 单测覆盖 Full path + **一次 split（两出边）金额决议**
 3. Feature 桩：`AtaPolicy` 枚举就位（实现可先 `UseOnly`）；`GasSponsored`/`MevTip`/`FeeHook`/`FlashRent` 接口占位
 4. `venue/mock` + 测试断言 ix 形状与 patch；`examples/mock_two_hop`

@@ -6,7 +6,7 @@ English | [中文](./design.zh-CN.md)
 
 This repo is not a pathfinder and not an on-chain router. It reimplements what aggregator / router **programs** usually do on-chain, using **ifx primitives off-chain**: given a topologically ordered set of edges (hops) plus account context, compile an executable ifx plan / transaction.
 
-Versus Jupiter’s on-chain router: equally **batteries-included** (fluent `Router`), but **venues / features / lifecycle policies are pluggable** — customization does not require forking a rigid path.
+Versus Jupiter’s on-chain router: equally **batteries-included** (fluent `orchestrator.Builder`), but **venues / features / lifecycle policies are pluggable** — customization does not require forking a rigid path.
 
 **Language: Go first** (dominant backend stack; aligns with `ifx/go-sdk` and existing `ifx-launchpad-orchestrator`). Rust / TS mirrors later.
 
@@ -102,7 +102,7 @@ func AutoWith(b RentLiquidityBackend) Feature
 Batteries-included:
 
 ```go
-router.New(frame).
+orchestrator.New(frame).
     AtaPolicy(ata.CreateAndCloseCreated).
     Feature(flashrent.Auto()). // ≡ Jupiter Flash Fill
     // Feature(flashrent.AutoWith(CustomRentLiquidity{Borrow: …, Repay: …})).
@@ -218,7 +218,7 @@ type RentLiquidityBackend interface {
 Batteries-included API (linear sugar):
 
 ```go
-plan, err := router.New(frame).
+plan, err := orchestrator.New(frame).
     AmountIn(1_000_000).
     MinAmountOut(900_000).
     AtaPolicy(ata.CreateAndCloseCreated).
@@ -233,7 +233,7 @@ plan, err := router.New(frame).
     Build()
 ```
 
-Advanced: `router.FromGraph(nodes, edges, features)` — splits without changing the framework.
+Advanced: `orchestrator.FromGraph(nodes, edges, features)` — splits without changing the framework.
 
 ## Repo layout (Go)
 
@@ -241,7 +241,7 @@ Advanced: `router.FromGraph(nodes, edges, features)` — splits without changing
 ifx-orchestrator/
   go.mod                     # module github.com/ifx-run/ifx-orchestrator
   README.md
-  router/                    # Builder facade
+  orchestrator/             # Builder facade
   compile/                   # RouteCompiler + CompileCtx + AmountFlow
   hop/                       # ExactInHop, HopBlueprint, PatchSite, SplitBps, Node/Edge
   feature/                   # Feature interface + built-in stubs (Ata/FlashRent/…)
@@ -262,7 +262,7 @@ Portable from launchpad (not wholesale): `internal/ifx` multi-leg let/patch orde
 
 ### Phase 0 — Framework + mock (first cut)
 
-1. `go mod` + core packages: `SplitBps`, `RouteNode`/`RouteEdge`, `AmountFlow`, `HopBlueprint`/`PatchSite`, `ExactInHop`, `Feature`, `compile`, `router`
+1. `go mod` + core packages: `SplitBps`, `RouteNode`/`RouteEdge`, `AmountFlow`, `HopBlueprint`/`PatchSite`, `ExactInHop`, `Feature`, `compile`, `orchestrator`
 2. Linear `.Hop()` sugar builds a path; `AmountFlow` unit tests cover Full path + **one split (two out-edges) amount resolution**
 3. Feature stubs: `AtaPolicy` enum in place (impl may start as `UseOnly`); `GasSponsored` / `MevTip` / `FeeHook` / `FlashRent` interface stubs
 4. `venue/mock` + tests asserting ix shape and patches; `examples/mock_two_hop`

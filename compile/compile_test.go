@@ -5,7 +5,7 @@ import (
 
 	"github.com/gagliardetto/solana-go"
 	"github.com/ifx-run/ifx-orchestrator/feature"
-	"github.com/ifx-run/ifx-orchestrator/router"
+	"github.com/ifx-run/ifx-orchestrator/orchestrator"
 	"github.com/ifx-run/ifx-orchestrator/venue/mock"
 	"github.com/ifx-run/ifx/go-sdk/constants"
 	"github.com/ifx-run/ifx/go-sdk/scratch"
@@ -34,7 +34,7 @@ func TestMockTwoHopPlanShape(t *testing.T) {
 
 	minOut := uint64(1)
 	counter := &mapForwardCounter{}
-	plan, err := router.New(s, user).
+	plan, err := orchestrator.New(s, user).
 		AmountIn(1_000_000).
 		MinAmountOut(minOut).
 		Feature(counter).
@@ -70,7 +70,7 @@ func TestMintMismatch(t *testing.T) {
 	p := solana.NewWallet().PublicKey()
 	acc := []*solana.AccountMeta{{PublicKey: user, IsSigner: true, IsWritable: true}}
 
-	_, err := router.New(s, user).
+	_, err := orchestrator.New(s, user).
 		AmountIn(100).
 		Hop(mock.New("a", p, a, b, ata1, acc)).
 		Hop(mock.New("b", p, c, d, ata2, acc)). // c != b

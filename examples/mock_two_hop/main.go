@@ -6,7 +6,7 @@ import (
 	"log"
 
 	"github.com/gagliardetto/solana-go"
-	"github.com/ifx-run/ifx-orchestrator/router"
+	"github.com/ifx-run/ifx-orchestrator/orchestrator"
 	"github.com/ifx-run/ifx-orchestrator/venue/mock"
 	"github.com/ifx-run/ifx/go-sdk/constants"
 	"github.com/ifx-run/ifx/go-sdk/scratch"
@@ -33,7 +33,7 @@ func main() {
 		}
 	}
 
-	plan, err := router.New(s, user).
+	plan, err := orchestrator.New(s, user).
 		AmountIn(1_000_000).
 		MinAmountOut(900_000).
 		Hop(mock.New("mock_raydium", prog1, mintA, mintB, ataB, acc(ataB))).

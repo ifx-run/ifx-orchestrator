@@ -1,5 +1,5 @@
-// Package router provides the batteries-included ExactIn route builder.
-package router
+// Package orchestrator provides the batteries-included ExactIn plan builder.
+package orchestrator
 
 import (
 	"fmt"

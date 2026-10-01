@@ -4,7 +4,7 @@
 
 Solana **execution orchestrator / venue hub**：把外部给定的 hops 编成可执行的 **ifx** tx。
 
-不是 Jupiter 式最优路径聚合器，也不上新的链上 router program。相对 Jupiter 合约：**开箱即用**（fluent `Router`）+ **高度可定制**（`ExactInHop` / `Feature` / Flash 后端可插）。
+不是 Jupiter 式最优路径聚合器，也不上新的链上 router program。相对 Jupiter 合约：**开箱即用**（fluent `orchestrator.Builder`）+ **高度可定制**（`ExactInHop` / `Feature` / Flash 后端可插）。
 
 | 层 | 职责 |
 |---|---|
@@ -17,7 +17,7 @@ Solana **execution orchestrator / venue hub**：把外部给定的 hops 编成�
 
 ## 现状（Phase 0）
 
-框架核心已落地：`AmountFlow`、`ExactInHop`、`compile`、`router`、`venue/mock`。
+框架核心已落地：`AmountFlow`、`ExactInHop`、`compile`、`orchestrator`、`venue/mock`。
 
 ```bash
 go test ./...
