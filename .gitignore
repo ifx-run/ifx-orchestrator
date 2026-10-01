@@ -1,0 +1,20 @@
+# Binaries
+/bin/
+/dist/
+*.exe
+*.test
+
+# Go
+/vendor/
+
+# IDE / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Local secrets / config
+config.toml
+*.pem
+keys/*.json
+!keys/.gitkeep
