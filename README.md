@@ -1,16 +1,18 @@
 # ifx-orchestrator
 
-Solana **execution orchestrator / venue hub**：把外部给定的 hops 编成可执行的 **ifx** tx。
+English | [中文](./README.zh-CN.md)
 
-不是 Jupiter 式最优路径聚合器，也不上新的链上 router program。相对 Jupiter 合约：**开箱即用**（fluent `Router`）+ **高度可定制**（`ExactInHop` / `Feature` / Flash 后端可插）。
+Solana **execution orchestrator / venue hub**: compile externally supplied hops into executable **ifx** transactions.
 
-| 层 | 职责 |
+Not a Jupiter-style best-path aggregator, and not a new on-chain router program. Versus Jupiter’s on-chain router: **batteries-included** (fluent `Router`) **and highly customizable** (pluggable `ExactInHop` / `Feature` / Flash backends).
+
+| Layer | Role |
 |---|---|
-| Venue (`ExactInHop`) | 账户布局、ix 模板、ExactIn patch |
+| Venue (`ExactInHop`) | Account layout, ix templates, ExactIn patches |
 | Feature | ATA / FlashRent / GasSponsored / Fee / Tip … |
-| Compiler | 图上边循环 → Frame + ifx ix |
-| Router | 开箱 Builder 门面 |
+| Compiler | Edge loop on the route graph → Frame + ifx instructions |
+| Router | Batteries-included builder facade |
 
-**首期语言：Go**（`ifx/go-sdk`）；Rust / TS 镜像后置。
+**First language: Go** (`ifx/go-sdk`); Rust / TS mirrors later.
 
-设计全文见 [docs/design.zh-CN.md](docs/design.zh-CN.md)。
+Full design: [docs/design.md](./docs/design.md).

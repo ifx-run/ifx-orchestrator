@@ -1,3 +1,5 @@
+[English](./design.md) | 中文
+
 # ifx-orchestrator：框架优先的 ExactIn 编排层
 
 ## 定位重申
