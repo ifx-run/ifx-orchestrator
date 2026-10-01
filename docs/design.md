@@ -169,7 +169,7 @@ flowchart TD
 | `GasPayment*` | **`GasSponsored` + `SponsorRepayMode`** | Feature |
 | `fee_node_index` | **`FeeHook`** | Feature |
 | — | **`MevTip`** | Exact lacked this; new Feature here |
-| Facade | **`Router`** | fluent batteries-included API |
+| Facade | **`orchestrator.Builder`** | fluent batteries-included API |
 
 Sketch (Go):
 

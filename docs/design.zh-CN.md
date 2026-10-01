@@ -169,7 +169,7 @@ flowchart TD
 | `GasPayment*` | **`GasSponsored` + `SponsorRepayMode`** | Feature |
 | `fee_node_index` | **`FeeHook`** | Feature |
 | — | **`MevTip`** | Exact 没有；本仓新增 Feature |
-| 门面 | **`Router`** | fluent 开箱 API |
+| 门面 | **`orchestrator.Builder`** | fluent 开箱 API |
 
 草图（Go）：
 

@@ -1,4 +1,4 @@
-// Command mock_two_hop shows the batteries-included Router surface with mock venues.
+// Command mock_two_hop shows the batteries-included orchestrator surface with mock venues.
 package main
 
 import (
