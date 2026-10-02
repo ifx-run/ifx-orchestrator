@@ -279,10 +279,15 @@ Acceptance: adding a hop = implement `ExactInHop` + `.Hop(...)`; the Exact-style
 
 - Full `AtaPolicy` branches + **`RentPeakEstimate` (from Exact `PdaLamportsBudget`)**
 - **`FlashRent`**: `RentLiquidityBackend` interface; **default `JupiterFlashFill`**; `CustomRentLiquidity` for arbitrary borrow/repay; `Auto` gating + AtaPolicy combo example
-- `SolFundingPolicy` + unwrap
-- `GasSponsored` (Intercept first); docs clarify split vs FlashRent
-- `FeeHook`, `MevTip`
-- `CUSTOMIZING.md` (incl. “how to swap Flash backend”) + optional `from_graph` split example
+- `CUSTOMIZING.md` (incl. “how to swap Flash backend”)
+
+### Phase 3 — Sponsor / tip / fee + Pump + simulate ✅
+
+- `GasSponsored` (baseline → assert → patched repay; optional ATA rent); orthogonal to FlashRent
+- `MevTip`, `FeeHook` (fixed + proceeds bps)
+- `venue/pumpfun` native `BuyExactSolIn` / `SellExactIn`
+- `examples/simulate_mainnet`: hard-coded hop → build → RPC simulate
+- Remaining deferred: `SolFundingPolicy` / unwrap, mid-graph `fee_node_index`, `SponsorRepayMode` beyond Intercept
 
 ## Design discipline
 

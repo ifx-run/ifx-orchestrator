@@ -279,10 +279,15 @@ ifx-orchestrator/
 
 - `AtaPolicy` 全分支 + **`RentPeakEstimate`（自 Exact `PdaLamportsBudget`）**
 - **`FlashRent`**：`RentLiquidityBackend` interface；**默认 `JupiterFlashFill`**；`CustomRentLiquidity` 接受任意 borrow/repay；`Auto` 门槛 + 与 AtaPolicy 组合 example
-- `SolFundingPolicy` + unwrap
-- `GasSponsored`（Intercept 优先）；文档写清与 FlashRent 的分工
-- `FeeHook`、`MevTip`
-- `CUSTOMIZING.md`（含「如何换 Flash 后端」）+ 可选 `from_graph` split example
+- `CUSTOMIZING.md`（含「如何换 Flash 后端」）
+
+### Phase 3 — Sponsor / tip / fee + Pump + simulate ✅
+
+- `GasSponsored`（baseline → assert → patched repay；可选 ATA rent）；与 FlashRent 正交
+- `MevTip`、`FeeHook`（固定 + proceeds bps）
+- `venue/pumpfun` 原生 `BuyExactSolIn` / `SellExactIn`
+- `examples/simulate_mainnet`：写死 hop → build → RPC simulate
+- 仍后置：`SolFundingPolicy` / unwrap、图中 `fee_node_index`、Intercept 以外的 `SponsorRepayMode`
 
 ## 设计纪律
 
