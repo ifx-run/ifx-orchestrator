@@ -293,7 +293,7 @@ Acceptance: adding a hop = implement `ExactInHop` + `.Hop(...)`; the Exact-style
 
 - `solfunding`: wrap + unwrap modes (`UnwrapLamports` Partial/All preferred over Close)
 - `feehook.AtNode` (Exact fee_node_index) with Fixed + TokenBps
-- `gassponsored` RepayMode: `InterceptSOL` / `InterceptWSOL` (UnwrapLamports → sponsor) / `TokenTransfer`
+- `gassponsored`: `FromNative` (SOL/WSOL + protection bps) / `FromToken` (fixed amount)
 
 ## Design discipline
 

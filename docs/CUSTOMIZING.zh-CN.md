@@ -24,7 +24,7 @@ orchestrator.New(scratch, user).
     AmountIn(amount).
     UserLamports(userSOL).
     Feature(flashrent.Auto()).
-    Feature(gassponsored.New(sponsor, fixedCost)). // 或 .WithWSOL(userWSOLATA)
+    Feature(gassponsored.New(sponsor, fixedCost)). // 或 FromNative(..., 12000).WithWSOL(...) / FromToken(...)
     Feature(solfunding.WrapAndUnwrap(wrapLamports, solfunding.UnwrapLamportsAll)).
     AtaPolicy(feature.AtaCreateAndCloseCreated).
     Feature(mevtip.New(tipTo, tipLamports)).
@@ -48,17 +48,29 @@ orchestrator.New(scratch, user).
   - `UnwrapLamportsAll` — `UnwrapLamports(all)`，保留 ATA + rent
   - `UnwrapClose` — `CloseAccount`，收回 rent
 
-### GasSponsored + RepayMode
+### GasSponsored
 
-`BeforeRoute` baseline；`AfterRoute` 断言 proceeds ≥ settle，再按模式还款：
+两种默认模式：
 
-| Mode | 行为 |
-|------|------|
-| `InterceptSOL`（默认） | patched System transfer user → sponsor |
-| `InterceptWSOL` | `SyncNative` + patched `UnwrapLamports` 从用户 WSOL ATA **直接解到 sponsor**（ATA 不关） |
-| `TokenTransfer` | patched SPL transfer user ATA → sponsor ATA（`FixedCost` 为 token raw） |
+**1. FromNative** — 用中间 SOL / WSOL 收益以 **SOL** 还款：
 
-`.WithWSOL(ata)` / `.WithToken(userATA, sponsorATA)`。`.WithATARent(ata)` 仅配合 `InterceptSOL`。
+```go
+gassponsored.FromNative(sponsor, estimatedCostLamports, 12_000). // 1.2× 保护系数
+    WithWSOL(userWSOLATA).   // 可选：优先 UnwrapLamports → sponsor，不足再 System transfer
+    WithATARent(createdATA)  // 可选：把 sponsor 垫的 ATA rent 计入 settle 基数
+```
+
+`settle = ceil((EstimatedCost + ataRent) * ProtectionBps / 10000)`。断言 `SOL_delta + WSOL_delta ≥ settle`，先从 WSOL 解包（保留 ATA），剩余用原生 SOL。
+
+**2. FromToken** — 构造时写死 token 与额度（不做 gas 推算）：
+
+```go
+gassponsored.FromToken(userATA, sponsorATA, amountRaw)
+```
+
+断言 token 收益 ≥ amount，再 patched SPL transfer。
+
+`New(sponsor, cost)` ≡ `FromNative(sponsor, cost, 10000)`。
 
 ### MevTip / FeeHook
 

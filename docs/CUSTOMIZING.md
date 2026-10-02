@@ -24,7 +24,7 @@ orchestrator.New(scratch, user).
     AmountIn(amount).
     UserLamports(userSOL).
     Feature(flashrent.Auto()).
-    Feature(gassponsored.New(sponsor, fixedCost)). // or .WithWSOL(userWSOLATA)
+    Feature(gassponsored.New(sponsor, fixedCost)). // or FromNative(..., 12000).WithWSOL(...) / FromToken(...)
     Feature(solfunding.WrapAndUnwrap(wrapLamports, solfunding.UnwrapLamportsAll)).
     AtaPolicy(feature.AtaCreateAndCloseCreated).
     Feature(mevtip.New(tipTo, tipLamports)).
@@ -48,17 +48,29 @@ orchestrator.New(scratch, user).
   - `UnwrapLamportsAll` — `UnwrapLamports(all)` keep ATA + rent
   - `UnwrapClose` — `CloseAccount` reclaim rent
 
-### GasSponsored + RepayMode
+### GasSponsored
 
-Baselines in `BeforeRoute`, asserts proceed ≥ settle in `AfterRoute`, then repays:
+Two default modes:
 
-| Mode | Behavior |
-|------|----------|
-| `InterceptSOL` (default) | patched System transfer user → sponsor |
-| `InterceptWSOL` | `SyncNative` + patched `UnwrapLamports` from user WSOL ATA **directly to sponsor** (ATA stays open) |
-| `TokenTransfer` | patched SPL transfer user ATA → sponsor ATA (`FixedCost` in token raw units) |
+**1. FromNative** — repay in SOL from mid-route SOL / WSOL proceeds:
 
-`.WithWSOL(ata)` / `.WithToken(userATA, sponsorATA)`. Optional `.WithATARent(ata)` only with `InterceptSOL`.
+```go
+gassponsored.FromNative(sponsor, estimatedCostLamports, 12_000). // 1.2× protection
+    WithWSOL(userWSOLATA).   // optional: prefer UnwrapLamports → sponsor, remainder System transfer
+    WithATARent(createdATA)  // optional: fold sponsor-paid ATA rent into settle base
+```
+
+`settle = ceil((EstimatedCost + ataRent) * ProtectionBps / 10000)`. Assert `SOL_delta + WSOL_delta ≥ settle`, then take WSOL first (via `UnwrapLamports`, ATA kept open), remainder from native SOL.
+
+**2. FromToken** — fixed token amount at construction (no gas math):
+
+```go
+gassponsored.FromToken(userATA, sponsorATA, amountRaw)
+```
+
+Asserts token proceeds ≥ amount, then patched SPL transfer.
+
+`New(sponsor, cost)` ≡ `FromNative(sponsor, cost, 10000)`.
 
 ### MevTip / FeeHook
 

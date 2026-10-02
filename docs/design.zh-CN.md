@@ -293,7 +293,7 @@ ifx-orchestrator/
 
 - `solfunding`：wrap + unwrap（优先 `UnwrapLamports` Partial/All，而非默认 Close）
 - `feehook.AtNode`（Exact fee_node_index）支持 Fixed + TokenBps
-- `gassponsored` RepayMode：`InterceptSOL` / `InterceptWSOL`（UnwrapLamports → sponsor）/ `TokenTransfer`
+- `gassponsored`：`FromNative`（SOL/WSOL + 保护 bps）/ `FromToken`（构造时定值）
 
 ## 设计纪律
 

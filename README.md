@@ -33,7 +33,7 @@ plan, err := orchestrator.New(scratch, user).
     AmountIn(1_000_000).
     UserLamports(userSOL).
     Feature(flashrent.Auto()).
-    Feature(gassponsored.New(sponsor, fixedCost).WithWSOL(userWSOL)).
+    Feature(gassponsored.FromNative(sponsor, fixedCost, 12_000).WithWSOL(userWSOL)).
     Feature(solfunding.WrapAndUnwrap(wrap, solfunding.UnwrapLamportsAll)).
     Feature(feehook.AtNode(1, feeTo).WithTokenBPS(50, feeATA)).
     AtaPolicy(feature.AtaCreateAndCloseCreated).
