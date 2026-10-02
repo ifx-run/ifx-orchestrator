@@ -18,7 +18,7 @@ Not a Jupiter-style best-path aggregator, and not a new on-chain router program.
 ## Status (Phase 0–4)
 
 - Framework: `AmountFlow`, `ExactInHop`, `compile`, `orchestrator`
-- Venues: `raydiumcpmm` / `raydiumammv4` / `raydiumclmm` / `raydiumlaunchpad`, `meteoradammv2` / `meteoradlmm` / `meteoradbc`, `whirlpool`, `pumpfun` (bonding + v2), `pumpamm`, `mock`
+- Venues: `raydiumcpmm` / `raydiumammv4` / `raydiumclmm` / `raydiumlaunchpad` / `byrealclmm` / `pancakeswapclmm`, `meteoradammv2` / `meteoradlmm` / `meteoradbc`, `whirlpool`, `pumpfun` (bonding + v2), `pumpamm`, `mock`
 - Features: `AtaPolicy`, `rentpeak`, `flashrent`, `gassponsored` (SOL/WSOL/Token repay), `solfunding` (wrap + `UnwrapLamports`), `mevtip`, `feehook` (incl. mid-graph `AtNode`)
 
 Path discovery via Jupiter **quote only**; txs are built with our `ExactInHop` venues (`examples/jupiter_simulate`).

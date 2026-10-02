@@ -18,7 +18,7 @@ Solana **execution orchestrator / venue hub**：把外部给定的 hops 编成�
 ## 现状（Phase 0–4）
 
 - 框架：`AmountFlow`、`ExactInHop`、`compile`、`orchestrator`
-- Venue：`raydiumcpmm` / `raydiumammv4` / `raydiumclmm` / `raydiumlaunchpad`、`meteoradammv2` / `meteoradlmm` / `meteoradbc`、`whirlpool`、`pumpfun`（内盘 + v2）、`pumpamm`、`mock`
+- Venue：`raydiumcpmm` / `raydiumammv4` / `raydiumclmm` / `raydiumlaunchpad` / `byrealclmm` / `pancakeswapclmm`、`meteoradammv2` / `meteoradlmm` / `meteoradbc`、`whirlpool`、`pumpfun`（内盘 + v2）、`pumpamm`、`mock`
 - Feature：`AtaPolicy`、`rentpeak`、`flashrent`、`gassponsored`（SOL/WSOL/Token 还款）、`solfunding`（wrap + `UnwrapLamports`）、`mevtip`、`feehook`（含图中 `AtNode`）
 
 路径发现用 Jupiter **quote only**；交易由本仓库 `ExactInHop` 自建（见 `examples/jupiter_simulate`）。
