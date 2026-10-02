@@ -18,3 +18,6 @@ config.toml
 *.pem
 keys/*.json
 !keys/.gitkeep
+
+# IDL download cache (dev only)
+.idl-cache/

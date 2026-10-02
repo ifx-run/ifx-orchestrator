@@ -1,4 +1,9 @@
 // Package pumpfun implements ExactInHop for Pump.fun native SOL buy/sell.
+//
+// Authoritative:
+//   - IDL: https://github.com/pump-fun/pump-public-docs/blob/main/idl/pump.json
+//   - Remaining bonding_curve_v2 (required on mainnet after program upgrade):
+//     https://github.com/pump-fun/pump-public-docs/issues/29
 package pumpfun
 
 import (
@@ -23,8 +28,10 @@ var FeeProgramID = solana.MustPublicKeyFromBase58(FeeProgramIDBase58)
 var NativeSOL = solana.MustPublicKeyFromBase58("So11111111111111111111111111111111111111112")
 
 var (
-	discBuyExactSolIn = [8]byte{56, 252, 116, 8, 158, 223, 205, 95}
-	discSell          = [8]byte{51, 230, 133, 164, 1, 127, 131, 173}
+	discBuyExactSolIn     = [8]byte{56, 252, 116, 8, 158, 223, 205, 95}
+	discSell              = [8]byte{51, 230, 133, 164, 1, 127, 131, 173}
+	discBuyExactQuoteInV2 = [8]byte{194, 171, 28, 70, 104, 77, 91, 47}
+	discSellV2            = [8]byte{93, 246, 130, 60, 231, 233, 64, 178}
 	feeConfigConst    = []byte{
 		1, 86, 224, 246, 147, 102, 90, 207, 68, 219, 21, 104, 191, 23,
 		91, 170, 81, 137, 203, 151, 245, 210, 255, 59, 101, 93, 43,
@@ -145,6 +152,14 @@ func BondingCurveV2PDA(mint solana.PublicKey) (solana.PublicKey, error) {
 	pda, _, err := solana.FindProgramAddress(
 		[][]byte{[]byte("bonding-curve-v2"), mint.Bytes()},
 		ProgramID,
+	)
+	return pda, err
+}
+
+func SharingConfigPDA(baseMint solana.PublicKey) (solana.PublicKey, error) {
+	pda, _, err := solana.FindProgramAddress(
+		[][]byte{[]byte("sharing-config"), baseMint.Bytes()},
+		FeeProgramID,
 	)
 	return pda, err
 }

@@ -9,9 +9,11 @@
 1. `VenueID`、`InputMint`、`OutputMint`、`OutputMeasureAccount`
 2. `BuildBlueprint` → amount 置 0 的模板 ix + `PatchSite` 偏移
 
-参考 `venue/raydiumcpmm`、`venue/meteoradammv2`、`venue/pumpfun`。
+参考 `venue/raydiumcpmm`、`venue/raydiumammv4`、`venue/raydiumclmm`、`venue/raydiumlaunchpad`、`venue/meteoradammv2`、`venue/meteoradlmm`、`venue/meteoradbc`、`venue/whirlpool`、`venue/pumpfun`、`venue/pumpamm`。Jupiter 标签 hint 见 `venue/catalog.go`。
 
-`pumpfun`：`NewBuyExactSolIn` / `NewSellExactIn`（原生 SOL）。Sell 把 SOL 打到钱包——请作**终点 hop**（`SplTokenAmount` 链式测不到 SOL 收益）。
+`pumpfun`：`NewBuyExactSolIn` / `NewSellExactIn`（原生 SOL）；以及 `BuyExactQuoteInV2` / `SellV2`（SPL quote）。Sell 原生 SOL 请作**终点 hop**。
+
+CLMM / Whirlpool / DLMM：tick/bin remaining accounts 由调用方传入 `Params`（框架不做 RPC 发现）。
 
 ## Feature
 

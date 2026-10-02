@@ -1,4 +1,6 @@
 // Package raydiumcpmm implements ExactInHop for Raydium CPMM swap_base_input.
+//
+// Authoritative: https://github.com/raydium-io/raydium-idl/blob/master/raydium_cpmm/raydium_cp_swap.json (instruction "swap_base_input").
 package raydiumcpmm
 
 import (

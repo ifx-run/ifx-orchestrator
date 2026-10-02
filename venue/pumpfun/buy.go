@@ -82,18 +82,14 @@ func (e *BuyExactSolIn) BuildBlueprint(_ *hop.HopBuildCtx) (hop.HopBlueprint, er
 	if err != nil {
 		return hop.HopBlueprint{}, err
 	}
-	bcV2, err := BondingCurveV2PDA(e.p.BaseMint)
-	if err != nil {
-		return hop.HopBlueprint{}, err
-	}
-
-	data := make([]byte, 24)
+	data := make([]byte, 25)
 	copy(data[:8], discBuyExactSolIn[:])
 	putU64LE(data[8:16], 0)
 	putU64LE(data[16:24], 0)
+	data[24] = 0 // track_volume (OptionBool)
 
 	minOff := MinOutOffset
-	ix := solana.NewInstruction(program, solana.AccountMetaSlice{
+	accounts := solana.AccountMetaSlice{
 		{PublicKey: globalPK, IsWritable: false, IsSigner: false},
 		{PublicKey: PickFeeRecipient(e.p.Curve.IsMayhemMode), IsWritable: true, IsSigner: false},
 		{PublicKey: e.p.BaseMint, IsWritable: false, IsSigner: false},
@@ -110,10 +106,15 @@ func (e *BuyExactSolIn) BuildBlueprint(_ *hop.HopBuildCtx) (hop.HopBlueprint, er
 		{PublicKey: uva, IsWritable: true, IsSigner: false},
 		{PublicKey: feeConfig, IsWritable: false, IsSigner: false},
 		{PublicKey: FeeProgramID, IsWritable: false, IsSigner: false},
-		{PublicKey: bcV2, IsWritable: false, IsSigner: false},
-		{PublicKey: PickBuybackFeeRecipient(), IsWritable: true, IsSigner: false},
-	}, data)
+	}
+	// Mainnet upgrade remaining account (required for cashback and non-cashback).
+	bcV2, err := BondingCurveV2PDA(e.p.BaseMint)
+	if err != nil {
+		return hop.HopBlueprint{}, err
+	}
+	accounts = append(accounts, &solana.AccountMeta{PublicKey: bcV2, IsWritable: false, IsSigner: false})
 
+	ix := solana.NewInstruction(program, accounts, data)
 	return hop.HopBlueprint{
 		Template: ix,
 		AmountIn: hop.PatchSite{Offset: AmountInOffset},

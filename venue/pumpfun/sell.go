@@ -78,11 +78,6 @@ func (e *SellExactIn) BuildBlueprint(_ *hop.HopBuildCtx) (hop.HopBlueprint, erro
 	if err != nil {
 		return hop.HopBlueprint{}, err
 	}
-	bcV2, err := BondingCurveV2PDA(e.p.BaseMint)
-	if err != nil {
-		return hop.HopBlueprint{}, err
-	}
-
 	data := make([]byte, 24)
 	copy(data[:8], discSell[:])
 	putU64LE(data[8:16], 0)
@@ -109,14 +104,16 @@ func (e *SellExactIn) BuildBlueprint(_ *hop.HopBuildCtx) (hop.HopBlueprint, erro
 		if err != nil {
 			return hop.HopBlueprint{}, err
 		}
-		accounts = append(accounts, &solana.AccountMeta{
-			PublicKey: uva, IsWritable: true, IsSigner: false,
-		})
+		accounts = append(accounts,
+			&solana.AccountMeta{PublicKey: uva, IsWritable: true, IsSigner: false},
+		)
 	}
-	accounts = append(accounts,
-		&solana.AccountMeta{PublicKey: bcV2, IsWritable: false, IsSigner: false},
-		&solana.AccountMeta{PublicKey: PickBuybackFeeRecipient(), IsWritable: true, IsSigner: false},
-	)
+	// Mainnet upgrade remaining account (required for cashback and non-cashback).
+	bcV2, err := BondingCurveV2PDA(e.p.BaseMint)
+	if err != nil {
+		return hop.HopBlueprint{}, err
+	}
+	accounts = append(accounts, &solana.AccountMeta{PublicKey: bcV2, IsWritable: false, IsSigner: false})
 
 	minOff := MinOutOffset
 	ix := solana.NewInstruction(program, accounts, data)

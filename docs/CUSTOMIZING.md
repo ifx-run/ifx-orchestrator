@@ -9,9 +9,11 @@ Implement `hop.ExactInHop`:
 1. `VenueID`, `InputMint`, `OutputMint`, `OutputMeasureAccount`
 2. `BuildBlueprint` → template ix with amount fields zeroed + `PatchSite` offsets
 
-See `venue/raydiumcpmm`, `venue/meteoradammv2`, and `venue/pumpfun` for minimal adapters.
+See `venue/raydiumcpmm`, `venue/raydiumammv4`, `venue/raydiumclmm`, `venue/raydiumlaunchpad`, `venue/meteoradammv2`, `venue/meteoradlmm`, `venue/meteoradbc`, `venue/whirlpool`, `venue/pumpfun`, `venue/pumpamm`. Jupiter label hints: `venue/catalog.go`.
 
-`pumpfun`: `NewBuyExactSolIn` / `NewSellExactIn` (native SOL). Sell pays SOL to the wallet — use as a **terminal** hop (chaining via `SplTokenAmount` will not capture SOL proceeds).
+`pumpfun`: `NewBuyExactSolIn` / `NewSellExactIn` (native SOL); plus `BuyExactQuoteInV2` / `SellV2` (SPL quote). Native SOL sell is a **terminal** hop.
+
+CLMM / Whirlpool / DLMM: pass tick/bin remaining accounts in `Params` (no RPC discovery in the framework).
 
 ## Features
 

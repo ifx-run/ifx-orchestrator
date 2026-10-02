@@ -1,4 +1,6 @@
 // Package meteoradammv2 implements ExactInHop for Meteora DAMM v2 (cp-amm) swap2 ExactIn.
+//
+// Authoritative: https://github.com/MeteoraAg/damm-v2/blob/main/programs/cp-amm/src/instructions/swap/ix_swap.rs (SwapCtx + swap2).
 package meteoradammv2
 
 import (
