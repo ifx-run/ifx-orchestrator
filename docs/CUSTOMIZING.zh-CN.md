@@ -66,6 +66,16 @@ orchestrator.New(scratch, user).
 - `feehook.Fixed` / `ProceedsBPS` — 路线结束时的 SOL 费
 - `feehook.AtNode(node, recipient).WithFixed(...).WithTokenBPS(...)` — Exact **fee_node_index**：该节点 in-edges 齐后扣一次（Fixed 在 AfterEdge；TokenBps 经 MapForwardAmount，下游 hop 看到净额）
 
+**自定义 fee program**（不用 System/Token transfer）：
+
+```go
+template := solana.NewInstruction(feeProgram, accounts, data) // amount 字段置 0
+feehook.ProceedsBPS(treasury, 50).
+    WithSolSettler(feehook.CustomIx(template, amountOffset))
+```
+
+默认 settler：`SystemTransferSettler`（SOL）/ `TokenTransferSettler`（TokenBps）。用 `.WithSolSettler` / `.WithTokenSettler` 覆盖；也可用 `SettlerFunc` 完全自定义。
+
 ### AtaPolicy
 
 | 策略 | BeforeRoute | AfterRoute |

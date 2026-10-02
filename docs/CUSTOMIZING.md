@@ -66,6 +66,23 @@ Baselines in `BeforeRoute`, asserts proceed ≥ settle in `AfterRoute`, then rep
 - `feehook.Fixed` / `ProceedsBPS` — end-of-route SOL fee
 - `feehook.AtNode(node, recipient).WithFixed(...).WithTokenBPS(bps, recipientATA)` — Exact **fee_node_index**: charge once after that node's in-edges settle (Fixed in AfterEdge; TokenBps via MapForwardAmount so the next hop sees net)
 
+**Custom fee program** (instead of System/Token transfer):
+
+```go
+template := solana.NewInstruction(feeProgram, accounts, data) // amount field zeroed
+feehook.ProceedsBPS(treasury, 50).
+    WithSolSettler(feehook.CustomIx(template, amountOffset))
+
+// or full control:
+feehook.Fixed(treasury, 1_000).WithSolSettler(feehook.SettlerFunc{
+    Patched: func(cx *feature.Ctx, amount typed.ScratchValue) error {
+        return feature.EmitRawPatchedCPI(cx, template, feature.RawCpiU64Patch(8, amount))
+    },
+})
+```
+
+Default settlers: `SystemTransferSettler` (SOL) / `TokenTransferSettler` (TokenBps). Override with `.WithSolSettler` / `.WithTokenSettler`.
+
 ### AtaPolicy
 
 | Policy | BeforeRoute | AfterRoute |

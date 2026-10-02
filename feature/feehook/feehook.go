@@ -19,6 +19,9 @@ import (
 //     FixedLamports fires in AfterEdge; TokenBps deducts via MapForwardAmount on the
 //     completing inbound edge (so the next hop sees net), or via ATA delta if the fee
 //     node is terminal (no further chaining).
+//
+// Settlement is pluggable via SolSettler / TokenSettler (default System/Token transfer).
+// Use CustomIx or SettlerFunc to call a proprietary fee program instead of transfer.
 type Feature struct {
 	feature.Base
 	Recipient solana.PublicKey
@@ -27,17 +30,23 @@ type Feature struct {
 	// nil => AfterRoute settlement only.
 	FeeNode *hop.NodeID
 
-	// FixedLamports is transferred literally when > 0 (System transfer from user).
+	// FixedLamports is transferred literally when > 0.
 	FixedLamports uint64
 	// ProceedsBps takes floor(bps * (user_lamports_after - baseline) / 10000) when > 0.
 	// Only applied at AfterRoute (needs full-route SOL delta).
 	ProceedsBps uint16
-	// TokenBps takes floor(bps * amount / 10000). Requires RecipientATA.
+	// TokenBps takes floor(bps * amount / 10000).
 	TokenBps uint16
-	// RecipientATA receives TokenBps transfers (required when TokenBps > 0).
+	// RecipientATA is used by the default TokenTransferSettler (required when TokenBps > 0
+	// and TokenSettler is nil).
 	RecipientATA solana.PublicKey
 	// SourceATA overrides Route.Nodes[*FeeNode].TokenAccount when TokenBps > 0.
 	SourceATA solana.PublicKey
+
+	// SolSettler collects FixedLamports / ProceedsBps. nil => SystemTransferSettler{To: Recipient}.
+	SolSettler Settler
+	// TokenSettler collects TokenBps. nil => TokenTransferSettler{Source, Destination: RecipientATA}.
+	TokenSettler Settler
 
 	userBefore   *typed.ScratchValue
 	tokenBefore  *typed.ScratchValue
@@ -68,10 +77,22 @@ func (f *Feature) WithFixed(lamports uint64) *Feature {
 	return f
 }
 
-// WithTokenBPS sets TokenBps + recipient ATA for mid-graph / terminal token fees.
+// WithTokenBPS sets TokenBps + recipient ATA for the default token settler.
 func (f *Feature) WithTokenBPS(bps uint16, recipientATA solana.PublicKey) *Feature {
 	f.TokenBps = bps
 	f.RecipientATA = recipientATA
+	return f
+}
+
+// WithSolSettler overrides how Fixed / ProceedsBps fees are collected.
+func (f *Feature) WithSolSettler(s Settler) *Feature {
+	f.SolSettler = s
+	return f
+}
+
+// WithTokenSettler overrides how TokenBps fees are collected.
+func (f *Feature) WithTokenSettler(s Settler) *Feature {
+	f.TokenSettler = s
 	return f
 }
 
@@ -89,15 +110,36 @@ func (f *Feature) sourceATA(cx *feature.Ctx) (solana.PublicKey, error) {
 	return ata, nil
 }
 
-func (f *Feature) BeforeRoute(cx *feature.Ctx) error {
-	if f.Recipient.IsZero() {
-		return fmt.Errorf("feehook: Recipient is required")
+func (f *Feature) solSettler() Settler {
+	if f.SolSettler != nil {
+		return f.SolSettler
 	}
+	return SystemTransferSettler{To: f.Recipient}
+}
+
+func (f *Feature) tokenSettler(cx *feature.Ctx) (Settler, error) {
+	if f.TokenSettler != nil {
+		return f.TokenSettler, nil
+	}
+	src, err := f.sourceATA(cx)
+	if err != nil {
+		return nil, err
+	}
+	if f.RecipientATA.IsZero() {
+		return nil, fmt.Errorf("feehook: RecipientATA is required for default TokenTransferSettler")
+	}
+	return TokenTransferSettler{Source: src, Destination: f.RecipientATA}, nil
+}
+
+func (f *Feature) BeforeRoute(cx *feature.Ctx) error {
 	if f.FixedLamports == 0 && f.ProceedsBps == 0 && f.TokenBps == 0 {
 		return fmt.Errorf("feehook: FixedLamports, ProceedsBps, or TokenBps is required")
 	}
-	if f.TokenBps > 0 && f.RecipientATA.IsZero() {
-		return fmt.Errorf("feehook: RecipientATA is required for TokenBps")
+	if f.SolSettler == nil && f.Recipient.IsZero() && (f.FixedLamports > 0 || f.ProceedsBps > 0) {
+		return fmt.Errorf("feehook: Recipient or SolSettler is required for SOL fees")
+	}
+	if f.TokenBps > 0 && f.TokenSettler == nil && f.RecipientATA.IsZero() {
+		return fmt.Errorf("feehook: RecipientATA or TokenSettler is required for TokenBps")
 	}
 	f.settled = false
 	f.tokenCharged = false
@@ -128,7 +170,8 @@ func (f *Feature) BeforeRoute(cx *feature.Ctx) error {
 		f.userBefore = &before
 		needLet = true
 	}
-	if f.TokenBps > 0 && f.FeeNode != nil {
+	if f.TokenBps > 0 && f.FeeNode != nil && f.TokenSettler == nil {
+		// Baseline only needed for default terminal TokenBps delta path.
 		src, err := f.sourceATA(cx)
 		if err != nil {
 			return err
@@ -139,6 +182,17 @@ func (f *Feature) BeforeRoute(cx *feature.Ctx) error {
 		}
 		f.tokenBefore = &tb
 		needLet = true
+	} else if f.TokenBps > 0 && f.FeeNode != nil && f.TokenSettler != nil {
+		// Custom token settler still needs a baseline for terminal (non-chaining) FeeNode.
+		src, err := f.sourceATA(cx)
+		if err == nil && !src.IsZero() {
+			tb, err := lb.SplTokenAmount(src)
+			if err != nil {
+				return err
+			}
+			f.tokenBefore = &tb
+			needLet = true
+		}
 	}
 	if needLet {
 		ix, err := lb.BuildIx()
@@ -163,9 +217,10 @@ func (f *Feature) AfterEdge(cx *feature.Ctx, edgeIndex int) error {
 		return nil
 	}
 	if f.FixedLamports > 0 {
-		feature.EmitFixedSystemTransfer(cx, cx.User, f.Recipient, f.FixedLamports)
+		if err := f.solSettler().EmitFixed(cx, f.FixedLamports); err != nil {
+			return err
+		}
 	}
-	// Terminal FeeNode: MapForwardAmount did not run — take TokenBps of ATA delta.
 	if f.TokenBps > 0 && !f.tokenCharged {
 		if err := f.chargeTokenFromDelta(cx); err != nil {
 			return err
@@ -186,14 +241,8 @@ func (f *Feature) MapForwardAmount(cx *feature.Ctx, amount feature.ForwardAmount
 	if edge.To != *f.FeeNode {
 		return amount, nil
 	}
-	// MapForward runs before AfterEdge decrements; inRemaining==1 means this is the last inbound.
 	if f.inRemaining != 1 {
 		return amount, nil
-	}
-
-	src, err := f.sourceATA(cx)
-	if err != nil {
-		return amount, err
 	}
 
 	lb := cx.Scratch.LetBuilder()
@@ -221,7 +270,11 @@ func (f *Feature) MapForwardAmount(cx *feature.Ctx, amount feature.ForwardAmount
 	}
 	cx.Emit(ix)
 
-	if err := feature.EmitPatchedTokenTransfer(cx, src, f.RecipientATA, cx.User, fee); err != nil {
+	settler, err := f.tokenSettler(cx)
+	if err != nil {
+		return amount, err
+	}
+	if err := settler.EmitPatched(cx, fee); err != nil {
 		return amount, err
 	}
 	f.tokenCharged = true
@@ -264,7 +317,11 @@ func (f *Feature) chargeTokenFromDelta(cx *feature.Ctx) error {
 		return err
 	}
 	cx.Emit(ix)
-	if err := feature.EmitPatchedTokenTransfer(cx, src, f.RecipientATA, cx.User, fee); err != nil {
+	settler, err := f.tokenSettler(cx)
+	if err != nil {
+		return err
+	}
+	if err := settler.EmitPatched(cx, fee); err != nil {
 		return err
 	}
 	f.tokenCharged = true
@@ -272,9 +329,10 @@ func (f *Feature) chargeTokenFromDelta(cx *feature.Ctx) error {
 }
 
 func (f *Feature) AfterRoute(cx *feature.Ctx) error {
-	// Mid-graph Fixed already charged in AfterEdge; avoid double-charge.
 	if f.FeeNode == nil && f.FixedLamports > 0 {
-		feature.EmitFixedSystemTransfer(cx, cx.User, f.Recipient, f.FixedLamports)
+		if err := f.solSettler().EmitFixed(cx, f.FixedLamports); err != nil {
+			return err
+		}
 	}
 	if f.ProceedsBps == 0 {
 		return nil
@@ -312,7 +370,7 @@ func (f *Feature) AfterRoute(cx *feature.Ctx) error {
 	}
 	cx.Emit(postIx)
 
-	return feature.EmitPatchedSystemTransfer(cx, cx.User, f.Recipient, fee)
+	return f.solSettler().EmitPatched(cx, fee)
 }
 
 var _ = typed.ScratchValue{}
