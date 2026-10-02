@@ -66,6 +66,10 @@ func (s SplitBps) TryAdd(other SplitBps) (SplitBps, error) {
 type RouteNode struct {
 	Mint         solana.PublicKey
 	TokenAccount solana.PublicKey
+	// TokenProgram is the SPL Token program for this ATA (zero => classic Tokenkeg).
+	TokenProgram solana.PublicKey
+	// Exists is true when the ATA is already initialized on-chain before the plan runs.
+	Exists bool
 }
 
 // PatchSite is a u64 LE write into instruction data (Exact CustomInstruction offset).

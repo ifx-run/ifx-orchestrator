@@ -3,6 +3,7 @@ package feature
 
 import (
 	"github.com/gagliardetto/solana-go"
+	"github.com/ifx-run/ifx-orchestrator/hop"
 	"github.com/ifx-run/ifx/go-sdk/scratch"
 	"github.com/ifx-run/ifx/go-sdk/typed"
 )
@@ -15,6 +16,17 @@ type Ctx struct {
 
 	AmountIn     uint64
 	MinAmountOut *uint64
+
+	// Route is the graph being compiled (set by compile).
+	Route hop.Route
+	// UserLamports is the user's available SOL before the plan (for FlashRent gating).
+	UserLamports uint64
+	// TokenAccountRent overrides classic ATA rent (0 => rentpeak default).
+	TokenAccountRent uint64
+
+	// RentPeak is filled by Ata (or callers) for FlashRent to read.
+	RentPeakPeakReserve uint64
+	RentPeakReady       bool
 }
 
 // Emit appends instructions to the plan.
@@ -37,10 +49,10 @@ type Feature interface {
 // Base embeds no-op Feature methods.
 type Base struct{}
 
-func (Base) BeforeRoute(*Ctx) error                     { return nil }
-func (Base) BeforeEdge(*Ctx, int) error                 { return nil }
-func (Base) AfterEdge(*Ctx, int) error                  { return nil }
-func (Base) AfterRoute(*Ctx) error                      { return nil }
+func (Base) BeforeRoute(*Ctx) error     { return nil }
+func (Base) BeforeEdge(*Ctx, int) error { return nil }
+func (Base) AfterEdge(*Ctx, int) error  { return nil }
+func (Base) AfterRoute(*Ctx) error      { return nil }
 func (Base) MapForwardAmount(_ *Ctx, a ForwardAmount) (ForwardAmount, error) {
 	return a, nil
 }

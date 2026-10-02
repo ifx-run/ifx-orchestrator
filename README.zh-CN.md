@@ -15,12 +15,11 @@ Solana **execution orchestrator / venue hub**：把外部给定的 hops 编成�
 
 **首期语言：Go**（`ifx/go-sdk`）；Rust / TS 镜像后置。
 
-## 现状（Phase 0–1）
+## 现状（Phase 0–2）
 
-框架核心 + 两个真实 venue：
-
-- `venue/raydiumcpmm` — Raydium CPMM `swap_base_input`
-- `venue/meteoradammv2` — Meteora DAMM v2 `swap2` ExactIn
+- 框架：`AmountFlow`、`ExactInHop`、`compile`、`orchestrator`
+- Venue：`raydiumcpmm`、`meteoradammv2`、`mock`
+- Feature：`AtaPolicy`、`rentpeak`、`flashrent`（默认 Jupiter，可插后端）
 
 ```bash
 go test ./...
@@ -28,4 +27,4 @@ go run ./examples/mock_two_hop/
 go run ./examples/two_venue_path/
 ```
 
-设计全文见 [docs/design.zh-CN.md](./docs/design.zh-CN.md)。
+详见 [docs/CUSTOMIZING.zh-CN.md](./docs/CUSTOMIZING.zh-CN.md)。设计全文见 [docs/design.zh-CN.md](./docs/design.zh-CN.md)。

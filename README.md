@@ -15,12 +15,11 @@ Not a Jupiter-style best-path aggregator, and not a new on-chain router program.
 
 **First language: Go** (`ifx/go-sdk`); Rust / TS mirrors later.
 
-## Status (Phase 0–1)
+## Status (Phase 0–2)
 
-Core framework plus two real venue adapters:
-
-- `venue/raydiumcpmm` — Raydium CPMM `swap_base_input`
-- `venue/meteoradammv2` — Meteora DAMM v2 `swap2` ExactIn
+- Framework: `AmountFlow`, `ExactInHop`, `compile`, `orchestrator`
+- Venues: `raydiumcpmm`, `meteoradammv2`, `mock`
+- Features: `AtaPolicy`, `rentpeak.EstimateForRoute`, `flashrent` (default Jupiter Flash Fill, pluggable backend)
 
 ```bash
 go test ./...
@@ -31,10 +30,12 @@ go run ./examples/two_venue_path/
 ```go
 plan, err := orchestrator.New(scratch, user).
     AmountIn(1_000_000).
-    MinAmountOut(900_000).
+    UserLamports(userSOL).
+    Feature(flashrent.Auto()).
+    AtaPolicy(feature.AtaCreateAndCloseCreated).
     Hop(raydiumcpmm.NewExactIn(...)).
     Hop(meteoradammv2.NewExactIn(...)).
     Build()
 ```
 
-Full design: [docs/design.md](./docs/design.md).
+See [docs/CUSTOMIZING.md](./docs/CUSTOMIZING.md). Full design: [docs/design.md](./docs/design.md).

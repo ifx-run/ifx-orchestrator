@@ -146,9 +146,10 @@ func (f *AmountFlow) StartStep(from, to hop.NodeID, bps hop.SplitBps) (*StepAmou
 }
 
 // Complete moves amount_in from the input node and credits amountOut to the output node.
-func (s *StepAmount) Complete(amountOut uint64) error {
+// Returns true when the input node has no remaining out-edges (eligible to close).
+func (s *StepAmount) Complete(amountOut uint64) (bool, error) {
 	if s.consumed {
-		return fmt.Errorf("step already completed")
+		return false, fmt.Errorf("step already completed")
 	}
 	s.consumed = true
 	in := &s.flow.nodes[s.from]
@@ -160,7 +161,7 @@ func (s *StepAmount) Complete(amountOut uint64) error {
 	if out.inputCount == 0 {
 		out.totalAmount = out.currentAmount
 	}
-	return nil
+	return in.outputCount == 0, nil
 }
 
 // NodeCurrent returns the simulated current amount at a node (for tests).

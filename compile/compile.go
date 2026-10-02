@@ -19,12 +19,14 @@ import (
 
 // Params configures a route compilation.
 type Params struct {
-	Scratch      *scratch.FrameScratch
-	User         solana.PublicKey
-	AmountIn     uint64
-	MinAmountOut *uint64
-	Route        hop.Route
-	Features     []feature.Feature
+	Scratch          *scratch.FrameScratch
+	User             solana.PublicKey
+	AmountIn         uint64
+	MinAmountOut     *uint64
+	Route            hop.Route
+	Features         []feature.Feature
+	UserLamports     uint64
+	TokenAccountRent uint64
 }
 
 // Plan is the compiled instruction list.
@@ -54,11 +56,14 @@ func Compile(p Params) (*Plan, error) {
 
 	ixs := []solana.Instruction{p.Scratch.IxReset()}
 	cx := &feature.Ctx{
-		Scratch:      p.Scratch,
-		User:         p.User,
-		Ixs:          &ixs,
-		AmountIn:     p.AmountIn,
-		MinAmountOut: p.MinAmountOut,
+		Scratch:          p.Scratch,
+		User:             p.User,
+		Ixs:              &ixs,
+		AmountIn:         p.AmountIn,
+		MinAmountOut:     p.MinAmountOut,
+		Route:            p.Route,
+		UserLamports:     p.UserLamports,
+		TokenAccountRent: p.TokenAccountRent,
 	}
 
 	for _, f := range p.Features {
@@ -181,11 +186,11 @@ func Compile(p Params) (*Plan, error) {
 			// AmountFlow needs an off-chain output estimate for readiness of later Full edges.
 			// Use step.AmountIn as a placeholder out when chaining (exact out is on-chain).
 			// For Full path this keeps node totals consistent enough for StartStep checks.
-			if err := step.Complete(step.AmountIn); err != nil {
+			if _, err := step.Complete(step.AmountIn); err != nil {
 				return nil, err
 			}
 		} else {
-			if err := step.Complete(0); err != nil {
+			if _, err := step.Complete(0); err != nil {
 				return nil, err
 			}
 		}
@@ -197,8 +202,9 @@ func Compile(p Params) (*Plan, error) {
 		}
 	}
 
-	for _, f := range p.Features {
-		if err := f.AfterRoute(cx); err != nil {
+	// AfterRoute runs in reverse so sandwich Features (FlashRent) repay after ATA closes.
+	for i := len(p.Features) - 1; i >= 0; i-- {
+		if err := p.Features[i].AfterRoute(cx); err != nil {
 			return nil, fmt.Errorf("after_route: %w", err)
 		}
 	}

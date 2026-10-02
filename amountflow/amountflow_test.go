@@ -22,7 +22,7 @@ func TestPathFull(t *testing.T) {
 	if s0.AmountIn != 1_000_000 {
 		t.Fatalf("got %d", s0.AmountIn)
 	}
-	if err := s0.Complete(900_000); err != nil {
+	if _, err := s0.Complete(900_000); err != nil {
 		t.Fatal(err)
 	}
 	s1, err := f.StartStep(1, 2, hop.Full())
@@ -32,7 +32,7 @@ func TestPathFull(t *testing.T) {
 	if s1.AmountIn != 900_000 {
 		t.Fatalf("got %d", s1.AmountIn)
 	}
-	if err := s1.Complete(800_000); err != nil {
+	if _, err := s1.Complete(800_000); err != nil {
 		t.Fatal(err)
 	}
 	if f.NodeTotal(2) != 800_000 {
@@ -68,7 +68,7 @@ func TestSplitRemainder(t *testing.T) {
 	if sA.AmountIn != 3000 { // 10000 * 3000 / 10000
 		t.Fatalf("leg A got %d", sA.AmountIn)
 	}
-	if err := sA.Complete(3000); err != nil {
+	if _, err := sA.Complete(3000); err != nil {
 		t.Fatal(err)
 	}
 	sB, err := f.StartStep(0, 2, hop.MustPartial(7000))
@@ -79,7 +79,7 @@ func TestSplitRemainder(t *testing.T) {
 	if sB.AmountIn != 7000 {
 		t.Fatalf("leg B remainder got %d", sB.AmountIn)
 	}
-	if err := sB.Complete(7000); err != nil {
+	if _, err := sB.Complete(7000); err != nil {
 		t.Fatal(err)
 	}
 }

@@ -13,13 +13,15 @@ import (
 
 // Builder is a fluent facade over compile.Compile.
 type Builder struct {
-	scratch      *scratch.FrameScratch
-	user         solana.PublicKey
-	amountIn     uint64
-	minAmountOut *uint64
-	nodes        []hop.RouteNode
-	edges        []hop.RouteEdge
-	features     []feature.Feature
+	scratch          *scratch.FrameScratch
+	user             solana.PublicKey
+	amountIn         uint64
+	minAmountOut     *uint64
+	userLamports     uint64
+	tokenAccountRent uint64
+	nodes            []hop.RouteNode
+	edges            []hop.RouteEdge
+	features         []feature.Feature
 }
 
 // New starts a builder for an existing public Frame scratch planner.
@@ -40,8 +42,26 @@ func (b *Builder) MinAmountOut(v uint64) *Builder {
 }
 
 // Feature appends a lifecycle Feature.
+// Register FlashRent before Ata so borrow runs first; AfterRoute is reversed so repay runs last.
 func (b *Builder) Feature(f feature.Feature) *Builder {
 	b.features = append(b.features, f)
+	return b
+}
+
+// AtaPolicy is sugar for Feature(feature.WithAta(p)).
+func (b *Builder) AtaPolicy(p feature.AtaPolicy) *Builder {
+	return b.Feature(feature.WithAta(p))
+}
+
+// UserLamports sets available SOL for FlashRent peak gating.
+func (b *Builder) UserLamports(v uint64) *Builder {
+	b.userLamports = v
+	return b
+}
+
+// TokenAccountRent overrides classic ATA rent used by rent-peak estimates.
+func (b *Builder) TokenAccountRent(v uint64) *Builder {
+	b.tokenAccountRent = v
 	return b
 }
 
@@ -118,10 +138,12 @@ func (b *Builder) Build() (*compile.Plan, error) {
 		}
 	}
 	return compile.Compile(compile.Params{
-		Scratch:      b.scratch,
-		User:         b.user,
-		AmountIn:     b.amountIn,
-		MinAmountOut: b.minAmountOut,
+		Scratch:          b.scratch,
+		User:             b.user,
+		AmountIn:         b.amountIn,
+		MinAmountOut:     b.minAmountOut,
+		UserLamports:     b.userLamports,
+		TokenAccountRent: b.tokenAccountRent,
 		Route: hop.Route{
 			Nodes: b.nodes,
 			Edges: b.edges,
