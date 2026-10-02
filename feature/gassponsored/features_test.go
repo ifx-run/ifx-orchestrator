@@ -73,6 +73,28 @@ func TestFromNativeWithWSOL(t *testing.T) {
 	}
 }
 
+func TestFromNativeSeparateRepayTo(t *testing.T) {
+	frame := solana.MustPublicKeyFromBase58("Fr8dvcgrSYKjpvJd471hQD2QuEjF7656WiEuUSb54obu")
+	tape := 1024
+	s := scratch.ForPublicFrame(frame, constants.DefaultProgramID, &tape)
+	user := solana.NewWallet().PublicKey()
+	feePayer := solana.NewWallet().PublicKey()
+	treasury := solana.NewWallet().PublicKey()
+	h := mockHop(t, user)
+
+	plan, err := orchestrator.New(s, user).
+		AmountIn(1000).
+		Feature(gassponsored.FromNative(feePayer, 5_000, 10_000).WithRepayTo(treasury)).
+		Hop(h).
+		Build()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.Instructions) < 4 {
+		t.Fatalf("too few ixs: %d", len(plan.Instructions))
+	}
+}
+
 func TestFromTokenFixedAmount(t *testing.T) {
 	frame := solana.MustPublicKeyFromBase58("Fr8dvcgrSYKjpvJd471hQD2QuEjF7656WiEuUSb54obu")
 	tape := 1024

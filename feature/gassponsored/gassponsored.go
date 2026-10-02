@@ -34,14 +34,20 @@ const (
 const DefaultProtectionBps uint16 = 10_000
 
 // Feature baselines balances before the route and, after the route, asserts
-// proceeds cover the settle amount then repays the sponsor.
+// proceeds cover the settle amount then pays RepayTo (may differ from Sponsor).
 //
 // Orthogonal to FlashRent: flash covers mid-tx rent peak; this covers fee-payer sponsorship.
 type Feature struct {
 	feature.Base
 
-	Mode    Mode
-	Sponsor solana.PublicKey // SOL repay destination / gas treasury identity
+	Mode Mode
+
+	// Sponsor is the fee-payer / fronting wallet identity (may equal RepayTo).
+	// Not written on-chain by this Feature; kept for callers / logging.
+	Sponsor solana.PublicKey
+	// RepayTo receives native SOL repay (System transfer / UnwrapLamports destination).
+	// Zero => fall back to Sponsor.
+	RepayTo solana.PublicKey
 
 	// --- ModeNative ---
 	// EstimatedCost is the off-chain estimate (sig + priority + tip, …) in lamports
@@ -50,17 +56,17 @@ type Feature struct {
 	// ProtectionBps scales EstimatedCost (+ optional ATA rent): settle = ceil(base * bps / 10000).
 	// 10000 = 1.0×, 12000 = 1.2×. Must be > 0.
 	ProtectionBps uint16
-	// UserWSOLATA, when set, also baselines WSOL and prefers UnwrapLamports → Sponsor
+	// UserWSOLATA, when set, also baselines WSOL and prefers UnwrapLamports → RepayTo
 	// before taking remaining settle from native SOL.
 	UserWSOLATA solana.PublicKey
 	// MeasureATA, when set, adds sponsor-paid ATA rent into the native settle base (ModeNative only).
 	MeasureATA solana.PublicKey
 
 	// --- ModeToken ---
-	UserTokenATA    solana.PublicKey
-	SponsorTokenATA solana.PublicKey
-	TokenAmount     uint64 // fixed raw units at construction
-	TokenProgram    solana.PublicKey
+	UserTokenATA  solana.PublicKey
+	RepayTokenATA solana.PublicKey // collection ATA (may belong to a treasury distinct from Sponsor)
+	TokenAmount   uint64           // fixed raw units at construction
+	TokenProgram  solana.PublicKey
 
 	userBefore   *typed.ScratchValue
 	wsolBefore   *typed.ScratchValue
@@ -70,7 +76,8 @@ type Feature struct {
 	ataCostReady bool
 }
 
-// FromNative repays the sponsor in SOL from user SOL/WSOL proceeds.
+// FromNative repays in SOL from user SOL/WSOL proceeds.
+// sponsor is used as both fee-payer identity and default RepayTo; call WithRepayTo when they differ.
 // protectionBps is the safety markup (10000 = 1.0×). Zero defaults to DefaultProtectionBps.
 func FromNative(sponsor solana.PublicKey, estimatedCostLamports uint64, protectionBps uint16) *Feature {
 	if protectionBps == 0 {
@@ -79,18 +86,20 @@ func FromNative(sponsor solana.PublicKey, estimatedCostLamports uint64, protecti
 	return &Feature{
 		Mode:          ModeNative,
 		Sponsor:       sponsor,
+		RepayTo:       sponsor,
 		EstimatedCost: estimatedCostLamports,
 		ProtectionBps: protectionBps,
 	}
 }
 
-// FromToken repays a fixed SPL token amount specified at construction.
-func FromToken(userATA, sponsorATA solana.PublicKey, amount uint64) *Feature {
+// FromToken repays a fixed SPL token amount to repayATA (collection account).
+// Optionally set WithSponsor when the fee payer differs from the token treasury owner.
+func FromToken(userATA, repayATA solana.PublicKey, amount uint64) *Feature {
 	return &Feature{
-		Mode:            ModeToken,
-		UserTokenATA:    userATA,
-		SponsorTokenATA: sponsorATA,
-		TokenAmount:     amount,
+		Mode:          ModeToken,
+		UserTokenATA:  userATA,
+		RepayTokenATA: repayATA,
+		TokenAmount:   amount,
 	}
 }
 
@@ -99,13 +108,25 @@ func New(sponsor solana.PublicKey, estimatedCostLamports uint64) *Feature {
 	return FromNative(sponsor, estimatedCostLamports, DefaultProtectionBps)
 }
 
+// WithSponsor sets the fee-payer identity (does not change RepayTo / RepayTokenATA).
+func (f *Feature) WithSponsor(sponsor solana.PublicKey) *Feature {
+	f.Sponsor = sponsor
+	return f
+}
+
+// WithRepayTo sets the native-SOL collection account when it differs from Sponsor.
+func (f *Feature) WithRepayTo(repayTo solana.PublicKey) *Feature {
+	f.RepayTo = repayTo
+	return f
+}
+
 // WithProtectionBps sets the native-mode safety markup (e.g. 12000 = 1.2×).
 func (f *Feature) WithProtectionBps(bps uint16) *Feature {
 	f.ProtectionBps = bps
 	return f
 }
 
-// WithWSOL enables WSOL proceeds as a native repay source (converted via UnwrapLamports).
+// WithWSOL enables WSOL proceeds as a native repay source (converted via UnwrapLamports to RepayTo).
 func (f *Feature) WithWSOL(userWSOLATA solana.PublicKey) *Feature {
 	f.UserWSOLATA = userWSOLATA
 	return f
@@ -116,6 +137,13 @@ func (f *Feature) WithWSOL(userWSOLATA solana.PublicKey) *Feature {
 func (f *Feature) WithATARent(ata solana.PublicKey) *Feature {
 	f.MeasureATA = ata
 	return f
+}
+
+func (f *Feature) repayDest() solana.PublicKey {
+	if !f.RepayTo.IsZero() {
+		return f.RepayTo
+	}
+	return f.Sponsor
 }
 
 func (f *Feature) tokenProgram() solana.PublicKey {
@@ -137,8 +165,8 @@ func (f *Feature) BeforeRoute(cx *feature.Ctx) error {
 }
 
 func (f *Feature) beforeNative(cx *feature.Ctx) error {
-	if f.Sponsor.IsZero() {
-		return fmt.Errorf("gassponsored: Sponsor is required")
+	if f.repayDest().IsZero() {
+		return fmt.Errorf("gassponsored: RepayTo or Sponsor is required")
 	}
 	if f.EstimatedCost == 0 && f.MeasureATA.IsZero() {
 		return fmt.Errorf("gassponsored: EstimatedCost or MeasureATA is required")
@@ -179,8 +207,8 @@ func (f *Feature) beforeNative(cx *feature.Ctx) error {
 }
 
 func (f *Feature) beforeToken(cx *feature.Ctx) error {
-	if f.UserTokenATA.IsZero() || f.SponsorTokenATA.IsZero() {
-		return fmt.Errorf("gassponsored: UserTokenATA and SponsorTokenATA are required")
+	if f.UserTokenATA.IsZero() || f.RepayTokenATA.IsZero() {
+		return fmt.Errorf("gassponsored: UserTokenATA and RepayTokenATA are required")
 	}
 	if f.TokenAmount == 0 {
 		return fmt.Errorf("gassponsored: TokenAmount must be > 0")
@@ -348,7 +376,7 @@ func (f *Feature) afterNative(cx *feature.Ctx) error {
 			return err
 		}
 	}
-	return feature.EmitPatchedSystemTransfer(cx, cx.User, f.Sponsor, fromSOL)
+	return feature.EmitPatchedSystemTransfer(cx, cx.User, f.repayDest(), fromSOL)
 }
 
 func (f *Feature) afterToken(cx *feature.Ctx) error {
@@ -386,7 +414,7 @@ func (f *Feature) afterToken(cx *feature.Ctx) error {
 	}
 	cx.Emit(assertIx)
 
-	return feature.EmitPatchedTokenTransfer(cx, f.UserTokenATA, f.SponsorTokenATA, cx.User, amount)
+	return feature.EmitPatchedTokenTransfer(cx, f.UserTokenATA, f.RepayTokenATA, cx.User, amount)
 }
 
 func (f *Feature) resolveATACost(cx *feature.Ctx) (typed.ScratchValue, error) {
@@ -410,6 +438,6 @@ func (f *Feature) repayUnwrapWSOL(cx *feature.Ctx, amount typed.ScratchValue) er
 	tp := f.tokenProgram()
 	cx.Emit(solfunding.SyncNativeInstruction(f.UserWSOLATA, tp))
 	zero := uint64(0)
-	template := solfunding.UnwrapLamportsInstruction(f.UserWSOLATA, f.Sponsor, cx.User, tp, &zero)
+	template := solfunding.UnwrapLamportsInstruction(f.UserWSOLATA, f.repayDest(), cx.User, tp, &zero)
 	return feature.EmitRawPatchedCPI(cx, template, feature.RawCpiU64Patch(solfunding.UnwrapLamportsAmountOffset, amount))
 }

@@ -55,17 +55,19 @@ Two default modes:
 **1. FromNative** — repay in SOL from mid-route SOL / WSOL proceeds:
 
 ```go
-gassponsored.FromNative(sponsor, estimatedCostLamports, 12_000). // 1.2× protection
-    WithWSOL(userWSOLATA).   // optional: prefer UnwrapLamports → sponsor, remainder System transfer
-    WithATARent(createdATA)  // optional: fold sponsor-paid ATA rent into settle base
+gassponsored.FromNative(feePayer, estimatedCostLamports, 12_000).
+    WithRepayTo(treasury). // when collection ≠ fee payer
+    WithWSOL(userWSOLATA).
+    WithATARent(createdATA)
 ```
 
-`settle = ceil((EstimatedCost + ataRent) * ProtectionBps / 10000)`. Assert `SOL_delta + WSOL_delta ≥ settle`, then take WSOL first (via `UnwrapLamports`, ATA kept open), remainder from native SOL.
+`settle = ceil((EstimatedCost + ataRent) * ProtectionBps / 10000)`. Assert `SOL_delta + WSOL_delta ≥ settle`, then take WSOL first (via `UnwrapLamports` → **RepayTo**), remainder from native SOL.
 
 **2. FromToken** — fixed token amount at construction (no gas math):
 
 ```go
-gassponsored.FromToken(userATA, sponsorATA, amountRaw)
+gassponsored.FromToken(userATA, repayTokenATA, amountRaw).
+    WithSponsor(feePayer) // optional when fee payer ≠ token treasury
 ```
 
 Asserts token proceeds ≥ amount, then patched SPL transfer.

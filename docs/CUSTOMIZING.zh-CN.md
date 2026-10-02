@@ -55,17 +55,19 @@ orchestrator.New(scratch, user).
 **1. FromNative** — 用中间 SOL / WSOL 收益以 **SOL** 还款：
 
 ```go
-gassponsored.FromNative(sponsor, estimatedCostLamports, 12_000). // 1.2× 保护系数
-    WithWSOL(userWSOLATA).   // 可选：优先 UnwrapLamports → sponsor，不足再 System transfer
-    WithATARent(createdATA)  // 可选：把 sponsor 垫的 ATA rent 计入 settle 基数
+gassponsored.FromNative(feePayer, estimatedCostLamports, 12_000).
+    WithRepayTo(treasury). // 收款账户 ≠ 代付账户时
+    WithWSOL(userWSOLATA).
+    WithATARent(createdATA)
 ```
 
-`settle = ceil((EstimatedCost + ataRent) * ProtectionBps / 10000)`。断言 `SOL_delta + WSOL_delta ≥ settle`，先从 WSOL 解包（保留 ATA），剩余用原生 SOL。
+`settle = ceil((EstimatedCost + ataRent) * ProtectionBps / 10000)`。断言 `SOL_delta + WSOL_delta ≥ settle`，先从 WSOL 解包到 **RepayTo**（保留 ATA），剩余用原生 SOL。
 
 **2. FromToken** — 构造时写死 token 与额度（不做 gas 推算）：
 
 ```go
-gassponsored.FromToken(userATA, sponsorATA, amountRaw)
+gassponsored.FromToken(userATA, repayTokenATA, amountRaw).
+    WithSponsor(feePayer) // 可选：代付账户 ≠ token 金库时
 ```
 
 断言 token 收益 ≥ amount，再 patched SPL transfer。
