@@ -17,20 +17,20 @@
 
 用 `.Feature(...)` 注册。**BeforeRoute** 按注册顺序执行；**AfterRoute** **逆序**（夹道）。
 
-典型租金峰值 + 赞助组合：
+典型租金峰值 + 赞助 + SOL funding：
 
 ```go
 orchestrator.New(scratch, user).
     AmountIn(amount).
     UserLamports(userSOL).
-    Feature(flashrent.Auto()).                   // 先 borrow
-    Feature(gassponsored.New(sponsor, fixedCost)). // baseline 用户 SOL
-    AtaPolicy(feature.AtaCreateAndCloseCreated). // 再 create ATA
+    Feature(flashrent.Auto()).
+    Feature(gassponsored.New(sponsor, fixedCost)). // 或 .WithWSOL(userWSOLATA)
+    Feature(solfunding.WrapAndUnwrap(wrapLamports, solfunding.UnwrapLamportsAll)).
+    AtaPolicy(feature.AtaCreateAndCloseCreated).
     Feature(mevtip.New(tipTo, tipLamports)).
-    Feature(feehook.ProceedsBPS(feeTo, 50)).
+    Feature(feehook.AtNode(1, feeTo).WithTokenBPS(50, feeATA)).
     Hop(...).
     Build()
-// AfterRoute（逆序）：fee → tip → close ATA → sponsor repay → flash repay
 ```
 
 ### FlashRent 后端
@@ -39,17 +39,32 @@ orchestrator.New(scratch, user).
 - 自定义：`flashrent.AutoWith(flashrent.CustomRentLiquidity{...})`
 - 若 `peak - userLamports` 超过后端 `MaxLend()`，编译失败——换能覆盖 peak 的后端
 
-### GasSponsored
+### SolFunding（WSOL wrap / unwrap）
 
-`BeforeRoute` 记录用户 lamports；`AfterRoute` 断言 `Δuser ≥ FixedCost（+ 可选 ATA rent）`，再 patched System transfer 还给 `Sponsor`。可选 `.WithATARent(ata)` 在 baseline 与第一条边之间量 sponsor 垫的 ATA 租金（须注册在 `Ata` **之前**）。
+- `solfunding.Wrap(lamports)` — BeforeRoute：create ATA + transfer + `SyncNative`
+- `solfunding.UnwrapWSOL(mode)` / `WrapAndUnwrap` — AfterRoute unwrap
+- **Unwrap 模式**（要保留 ATA 时优先用 `UnwrapLamports*`，不要默认 Close）：
+  - `UnwrapPartial` — `UnwrapLamports(amount)`（Token ix 45）
+  - `UnwrapLamportsAll` — `UnwrapLamports(all)`，保留 ATA + rent
+  - `UnwrapClose` — `CloseAccount`，收回 rent
 
-与 FlashRent 正交：flash = 峰值流动性；sponsor = 代付 gas + 从成交 SOL 回款。
+### GasSponsored + RepayMode
+
+`BeforeRoute` baseline；`AfterRoute` 断言 proceeds ≥ settle，再按模式还款：
+
+| Mode | 行为 |
+|------|------|
+| `InterceptSOL`（默认） | patched System transfer user → sponsor |
+| `InterceptWSOL` | `SyncNative` + patched `UnwrapLamports` 从用户 WSOL ATA **直接解到 sponsor**（ATA 不关） |
+| `TokenTransfer` | patched SPL transfer user ATA → sponsor ATA（`FixedCost` 为 token raw） |
+
+`.WithWSOL(ata)` / `.WithToken(userATA, sponsorATA)`。`.WithATARent(ata)` 仅配合 `InterceptSOL`。
 
 ### MevTip / FeeHook
 
-- `mevtip.New(receiver, lamports)` — `AfterRoute` 字面 System transfer
-- `feehook.Fixed(receiver, lamports)` — 固定费
-- `feehook.ProceedsBPS(receiver, bps)` — `floor(bps * SOL_delta / 10000)` patched transfer
+- `mevtip.New` — `AfterRoute` 字面 tip
+- `feehook.Fixed` / `ProceedsBPS` — 路线结束时的 SOL 费
+- `feehook.AtNode(node, recipient).WithFixed(...).WithTokenBPS(...)` — Exact **fee_node_index**：该节点 in-edges 齐后扣一次（Fixed 在 AfterEdge；TokenBps 经 MapForwardAmount，下游 hop 看到净额）
 
 ### AtaPolicy
 

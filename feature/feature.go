@@ -27,6 +27,10 @@ type Ctx struct {
 	// RentPeak is filled by Ata (or callers) for FlashRent to read.
 	RentPeakPeakReserve uint64
 	RentPeakReady       bool
+
+	// EdgeIndex is the edge currently being compiled (-1 outside the edge loop).
+	// MapForwardAmount / AfterEdge may read it.
+	EdgeIndex int
 }
 
 // Emit appends instructions to the plan.

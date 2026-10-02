@@ -287,7 +287,13 @@ ifx-orchestrator/
 - `MevTip`、`FeeHook`（固定 + proceeds bps）
 - `venue/pumpfun` 原生 `BuyExactSolIn` / `SellExactIn`
 - `examples/simulate_mainnet`：写死 hop → build → RPC simulate
-- 仍后置：`SolFundingPolicy` / unwrap、图中 `fee_node_index`、Intercept 以外的 `SponsorRepayMode`
+- 仍后置：`SponsorRepayMode.SwapToSol`、更丰富的 SolFunding（如 sponsor 代 wrap）
+
+### Phase 4 — SolFunding + 图中 fee + repay modes ✅
+
+- `solfunding`：wrap + unwrap（优先 `UnwrapLamports` Partial/All，而非默认 Close）
+- `feehook.AtNode`（Exact fee_node_index）支持 Fixed + TokenBps
+- `gassponsored` RepayMode：`InterceptSOL` / `InterceptWSOL`（UnwrapLamports → sponsor）/ `TokenTransfer`
 
 ## 设计纪律
 

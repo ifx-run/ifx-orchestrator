@@ -287,7 +287,13 @@ Acceptance: adding a hop = implement `ExactInHop` + `.Hop(...)`; the Exact-style
 - `MevTip`, `FeeHook` (fixed + proceeds bps)
 - `venue/pumpfun` native `BuyExactSolIn` / `SellExactIn`
 - `examples/simulate_mainnet`: hard-coded hop → build → RPC simulate
-- Remaining deferred: `SolFundingPolicy` / unwrap, mid-graph `fee_node_index`, `SponsorRepayMode` beyond Intercept
+- Remaining deferred: `SponsorRepayMode.SwapToSol`, richer SolFunding policies (e.g. wrap-from-sponsor)
+
+### Phase 4 — SolFunding + mid-graph fee + repay modes ✅
+
+- `solfunding`: wrap + unwrap modes (`UnwrapLamports` Partial/All preferred over Close)
+- `feehook.AtNode` (Exact fee_node_index) with Fixed + TokenBps
+- `gassponsored` RepayMode: `InterceptSOL` / `InterceptWSOL` (UnwrapLamports → sponsor) / `TokenTransfer`
 
 ## Design discipline
 

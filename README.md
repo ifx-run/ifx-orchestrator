@@ -15,11 +15,11 @@ Not a Jupiter-style best-path aggregator, and not a new on-chain router program.
 
 **First language: Go** (`ifx/go-sdk`); Rust / TS mirrors later.
 
-## Status (Phase 0–3)
+## Status (Phase 0–4)
 
 - Framework: `AmountFlow`, `ExactInHop`, `compile`, `orchestrator`
 - Venues: `raydiumcpmm`, `meteoradammv2`, `pumpfun` (native buy/sell), `mock`
-- Features: `AtaPolicy`, `rentpeak`, `flashrent` (Jupiter default), `gassponsored`, `mevtip`, `feehook`
+- Features: `AtaPolicy`, `rentpeak`, `flashrent`, `gassponsored` (SOL/WSOL/Token repay), `solfunding` (wrap + `UnwrapLamports`), `mevtip`, `feehook` (incl. mid-graph `AtNode`)
 
 ```bash
 go test ./...
@@ -33,12 +33,11 @@ plan, err := orchestrator.New(scratch, user).
     AmountIn(1_000_000).
     UserLamports(userSOL).
     Feature(flashrent.Auto()).
-    Feature(gassponsored.New(sponsor, fixedCost)).
-    Feature(mevtip.New(tipReceiver, tipLamports)).
-    Feature(feehook.ProceedsBPS(feeRecipient, 50)).
+    Feature(gassponsored.New(sponsor, fixedCost).WithWSOL(userWSOL)).
+    Feature(solfunding.WrapAndUnwrap(wrap, solfunding.UnwrapLamportsAll)).
+    Feature(feehook.AtNode(1, feeTo).WithTokenBPS(50, feeATA)).
     AtaPolicy(feature.AtaCreateAndCloseCreated).
     Hop(raydiumcpmm.NewExactIn(...)).
-    Hop(meteoradammv2.NewExactIn(...)).
     Build()
 ```
 

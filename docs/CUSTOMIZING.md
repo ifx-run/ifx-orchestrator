@@ -17,20 +17,20 @@ See `venue/raydiumcpmm`, `venue/meteoradammv2`, and `venue/pumpfun` for minimal 
 
 Register with `.Feature(...)`. **BeforeRoute** runs in registration order; **AfterRoute** runs in **reverse** (sandwich).
 
-Typical rent-peak + sponsor stack:
+Typical rent-peak + sponsor + SOL funding stack:
 
 ```go
 orchestrator.New(scratch, user).
     AmountIn(amount).
     UserLamports(userSOL).
-    Feature(flashrent.Auto()).                   // borrow first
-    Feature(gassponsored.New(sponsor, fixedCost)). // baseline user SOL
-    AtaPolicy(feature.AtaCreateAndCloseCreated). // then create ATAs
+    Feature(flashrent.Auto()).
+    Feature(gassponsored.New(sponsor, fixedCost)). // or .WithWSOL(userWSOLATA)
+    Feature(solfunding.WrapAndUnwrap(wrapLamports, solfunding.UnwrapLamportsAll)).
+    AtaPolicy(feature.AtaCreateAndCloseCreated).
     Feature(mevtip.New(tipTo, tipLamports)).
-    Feature(feehook.ProceedsBPS(feeTo, 50)).
+    Feature(feehook.AtNode(1, feeTo).WithTokenBPS(50, feeATA)).
     Hop(...).
     Build()
-// AfterRoute (reverse): fee → tip → close ATAs → sponsor repay → flash repay
 ```
 
 ### FlashRent backends
@@ -39,17 +39,32 @@ orchestrator.New(scratch, user).
 - Custom: `flashrent.AutoWith(flashrent.CustomRentLiquidity{Borrow: ix, Repay: ix, MaxLamports: n})`
 - If `peak - userLamports` exceeds backend `MaxLend()`, compile fails — supply a backend that can cover the peak.
 
-### GasSponsored
+### SolFunding (WSOL wrap / unwrap)
 
-Baselines user lamports in `BeforeRoute`, then in `AfterRoute`: assert `Δuser ≥ FixedCost (+ optional ATA rent)` and patch a System transfer to `Sponsor`. Optional `.WithATARent(ata)` measures sponsor-paid ATA rent between baseline and first edge (register **before** `Ata`).
+- `solfunding.Wrap(lamports)` — create ATA + transfer + `SyncNative` in BeforeRoute
+- `solfunding.UnwrapWSOL(mode)` / `WrapAndUnwrap` — AfterRoute unwrap
+- **Unwrap modes** (prefer `UnwrapLamports*` over Close when the ATA should stay open):
+  - `UnwrapPartial` — `UnwrapLamports(amount)` (Token ix 45)
+  - `UnwrapLamportsAll` — `UnwrapLamports(all)` keep ATA + rent
+  - `UnwrapClose` — `CloseAccount` reclaim rent
 
-Orthogonal to FlashRent: flash = peak liquidity; sponsor = fee-payer front + repay from trade SOL proceeds.
+### GasSponsored + RepayMode
+
+Baselines in `BeforeRoute`, asserts proceed ≥ settle in `AfterRoute`, then repays:
+
+| Mode | Behavior |
+|------|----------|
+| `InterceptSOL` (default) | patched System transfer user → sponsor |
+| `InterceptWSOL` | `SyncNative` + patched `UnwrapLamports` from user WSOL ATA **directly to sponsor** (ATA stays open) |
+| `TokenTransfer` | patched SPL transfer user ATA → sponsor ATA (`FixedCost` in token raw units) |
+
+`.WithWSOL(ata)` / `.WithToken(userATA, sponsorATA)`. Optional `.WithATARent(ata)` only with `InterceptSOL`.
 
 ### MevTip / FeeHook
 
 - `mevtip.New(receiver, lamports)` — literal System transfer in `AfterRoute`
-- `feehook.Fixed(receiver, lamports)` — literal fee
-- `feehook.ProceedsBPS(receiver, bps)` — `floor(bps * SOL_delta / 10000)` patched transfer after route
+- `feehook.Fixed` / `ProceedsBPS` — end-of-route SOL fee
+- `feehook.AtNode(node, recipient).WithFixed(...).WithTokenBPS(bps, recipientATA)` — Exact **fee_node_index**: charge once after that node's in-edges settle (Fixed in AfterEdge; TokenBps via MapForwardAmount so the next hop sees net)
 
 ### AtaPolicy
 

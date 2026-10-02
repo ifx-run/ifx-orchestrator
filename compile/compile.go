@@ -64,6 +64,7 @@ func Compile(p Params) (*Plan, error) {
 		Route:            p.Route,
 		UserLamports:     p.UserLamports,
 		TokenAccountRent: p.TokenAccountRent,
+		EdgeIndex:        -1,
 	}
 
 	for _, f := range p.Features {
@@ -75,6 +76,7 @@ func Compile(p Params) (*Plan, error) {
 	var forward *typed.ScratchValue // amount binding for next hop when chaining
 
 	for i, edge := range p.Route.Edges {
+		cx.EdgeIndex = i
 		for _, f := range p.Features {
 			if err := f.BeforeEdge(cx, i); err != nil {
 				return nil, fmt.Errorf("before_edge[%d]: %w", i, err)

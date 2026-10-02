@@ -15,11 +15,11 @@ Solana **execution orchestrator / venue hub**：把外部给定的 hops 编成�
 
 **首期语言：Go**（`ifx/go-sdk`）；Rust / TS 镜像后置。
 
-## 现状（Phase 0–3）
+## 现状（Phase 0–4）
 
 - 框架：`AmountFlow`、`ExactInHop`、`compile`、`orchestrator`
 - Venue：`raydiumcpmm`、`meteoradammv2`、`pumpfun`（原生 buy/sell）、`mock`
-- Feature：`AtaPolicy`、`rentpeak`、`flashrent`（默认 Jupiter）、`gassponsored`、`mevtip`、`feehook`
+- Feature：`AtaPolicy`、`rentpeak`、`flashrent`、`gassponsored`（SOL/WSOL/Token 还款）、`solfunding`（wrap + `UnwrapLamports`）、`mevtip`、`feehook`（含图中 `AtNode`）
 
 ```bash
 go test ./...
