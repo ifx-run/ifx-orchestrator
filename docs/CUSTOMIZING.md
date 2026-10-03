@@ -6,16 +6,16 @@ English | [中文](./CUSTOMIZING.zh-CN.md)
 
 Implement `hop.ExactInHop`:
 
-1. `VenueID`, `InputMint`, `OutputMint`, `OutputMeasureAccount`
+1. `VenueID`, `Input() hop.Port`, `Output() hop.Port` (`Port.Native` = user-wallet lamports with Wrapped SOL mint)
 2. `BuildBlueprint` → template ix with amount fields zeroed + `PatchSite` offsets
 
-See `venue/raydiumcpmm`, `venue/raydiumammv4`, `venue/raydiumclmm`, `venue/raydiumlaunchpad`, `venue/byrealclmm`, `venue/pancakeswapclmm`, `venue/meteoradammv2`, `venue/meteoradlmm`, `venue/meteoradbc`, `venue/whirlpool`, `venue/pumpfun`, `venue/pumpamm`, `venue/jupiter`, `venue/titan`. Jupiter label hints: `venue/catalog.go`.
+See `venue/raydiumcpmm`, `venue/raydiumammv4`, `venue/raydiumclmm`, `venue/raydiumlaunchpad`, `venue/byrealclmm`, `venue/pancakeswapclmm`, `venue/meteoradammv2`, `venue/meteoradlmm`, `venue/meteoradbc`, `venue/whirlpool`, `venue/lifinityv2`, `venue/pumpfun`, `venue/pumpamm`, `venue/jupiter`, `venue/titan`. Jupiter label hints: `venue/catalog.go`.
 
-`jupiter`: wrap `POST /swap/v1/swap-instructions` **swapInstruction only** (`InstructionFromAPI`). Use `wrapAndUnwrapSol=false` and a user `destinationTokenAccount`; do not use `useTokenLedger`. Amount-in is patched like any other hop, so you can `.Hop(own).Hop(jup)` or `.Hop(jup).Hop(own)`. Setup/cleanup/compute-budget stay in Features. Watch account count / tx size (Jupiter remaining accounts are large).
+`jupiter`: wrap `POST /swap/v1/swap-instructions` **swapInstruction only** (`InstructionFromAPI`). Use `wrapAndUnwrapSol=false` and a user `destinationTokenAccount`; do not use `useTokenLedger`. Amount-in is patched like any other hop, so you can `.Hop(own).Hop(jup)` or `.Hop(jup).Hop(own)`. Native SOL ↔ WSOL between hops is compile (`SolIn` / `SolOut`); ATA create still Features. Watch account count / tx size (Jupiter remaining accounts are large).
 
-`titan`: wrap the T1TAN `swap_route` / `swap_route_v2` instruction from a Titan quote (`SelectSwap`). Amount @8, min_out @16 (official CPI layout). Prefer `titanSwapVersion=3`, `outputWsol=true` when the next hop expects WSOL, and `transactionTemplate` so Titan sizes the route next to ifx ixs. Do not pass wrap/ATA ixs from V2 into the hop — Features own those.
+`titan`: wrap the T1TAN `swap_route` / `swap_route_v2` instruction from a Titan quote (`SelectSwap`). Amount @8, min_out @16 (official CPI layout). Prefer `titanSwapVersion=3`, `outputWsol=true` when the next hop expects WSOL, and `transactionTemplate` so Titan sizes the route next to ifx ixs. Do not pass wrap/ATA ixs from V2 into the hop.
 
-`pumpfun`: `NewBuyExactSolIn` / `NewSellExactIn` (native SOL); plus `BuyExactQuoteInV2` / `SellV2` (SPL quote). Native SOL sell is a **terminal** hop.
+`pumpfun`: `NewBuyExactSolIn` / `NewSellExactIn` spend/credit **native SOL** (wallet lamports). Compile wraps to the next hop's WSOL ATA automatically (e.g. `.Hop(pumpSell).Hop(raydiumWSOL)`). Last-hop native proceeds stay in the wallet unless `.SolOut(hop.SolWSOL)` (optional `.WSOLAccount(ata)`). Reverse: WSOL hop then inner buy unwraps into the wallet. SPL quote v2 (`BuyExactQuoteInV2` / `SellV2`) is a normal ATA hop.
 
 CLMM venues (`raydiumclmm`, `byrealclmm`, `pancakeswapclmm`, `whirlpool`, `meteoradlmm`): pass tick/bin remaining accounts in `Params` (no RPC discovery in the framework).
 
@@ -31,8 +31,11 @@ orchestrator.New(scratch, user).
     UserLamports(userSOL).
     Feature(flashrent.Auto()).
     Feature(gassponsored.New(sponsor, fixedCost)). // or FromNative(..., 12000).WithWSOL(...) / FromToken(...)
-    Feature(solfunding.WrapAndUnwrap(wrapLamports, solfunding.UnwrapLamportsAll)).
+    Feature(solfunding.WrapAndUnwrap(wrapLamports, solfunding.UnwrapLamportsAll)). // optional prelude; hop-to-hop SOL/WSOL is compile
     AtaPolicy(feature.AtaCreateAndCloseCreated).
+    SolIn(hop.SolNative).  // first hop WSOL: wrap AmountIn from wallet (omit if ATA already funded)
+    SolOut(hop.SolWSOL).   // last hop native SOL → WSOL ATA (omit to leave lamports)
+    Feature(hopconserve.New()). // per-hop output ≥ +1 and input debit ≥ amount_in
     Feature(arbcheck.Token(userATA, minProfit)). // first → AfterRoute asserts last
     Feature(mevtip.New(tipTo, tipLamports)).     // or ShareNative(tipTo, 500).WithWSOL(wsol)
     Feature(feehook.AtNode(1, feeTo).WithTokenBPS(50, feeATA)).
@@ -45,6 +48,18 @@ orchestrator.New(scratch, user).
 - Default: `flashrent.Auto()` → Jupiter Flash Fill (`JUPLdTq…`), lends **one** TokenAccount rent.
 - Custom: `flashrent.AutoWith(flashrent.CustomRentLiquidity{Borrow: ix, Repay: ix, MaxLamports: n})`
 - If `peak - userLamports` exceeds backend `MaxLend()`, compile fails — supply a backend that can cover the peak.
+
+### SolIn / SolOut (native SOL ↔ WSOL)
+
+Compile adapts lanes between hops when both sides use the Wrapped SOL mint:
+
+- native → WSOL ATA: transfer hop **delta** + `SyncNative` into the next hop's `UserInputATA`
+- WSOL ATA → native: `UnwrapLamports(delta)` into the wallet (ATA stays open)
+- WSOL → WSOL / native → native: forward the delta (same ATA)
+
+`.SolIn(hop.SolNative)` wraps `AmountIn` into the first hop's WSOL ATA when that hop is not native. `.SolOut(hop.SolWSOL)` wraps the last hop's native proceeds (`.WSOLAccount` or derived ATA). Default `SolAsEmitted` leaves the venue CPI form as-is.
+
+`solfunding.Wrap` remains a **fixed-lamports** BeforeRoute prelude; hop-to-hop conversion is compile.
 
 ### SolFunding (WSOL wrap / unwrap)
 
@@ -92,6 +107,7 @@ Atomic cycle (e.g. two Jupiter legs A→B→A): you still need a **real** off-ch
 ```
 
 - `arbcheck.Token(ata, minProfit)` — `after ≥ before + minProfit` (0 = break-even)
+- `hopconserve.New()` — each hop: output after ≥ before+1 (ATA or native lamports); input debit ≥ patched amount_in (`.SkipInput()` for output-only). Same in-out ATA skips output.
 - `arbcheck.Native(minProfit).WithWSOL(wsolATA)` — same for lamports + WSOL
 - Register **arbcheck first** so AfterRoute (reversed) asserts after tips/fees
 - `mevtip.New(receiver, lamports)` — literal System transfer in `AfterRoute`

@@ -175,12 +175,13 @@ func NewSellExactIn(p SellParams) (*SellExactIn, error) {
 	return &SellExactIn{p: p, prog: prog, eventAuth: ea}, nil
 }
 
-func (e *SellExactIn) VenueID() string             { return "pump_amm_sell" }
-func (e *SellExactIn) InputMint() solana.PublicKey { return e.p.Pool.BaseMint }
-func (e *SellExactIn) OutputMint() solana.PublicKey {
-	return e.p.Pool.QuoteMint
+func (e *SellExactIn) VenueID() string { return "pump_amm_sell" }
+func (e *SellExactIn) Input() hop.Port {
+	return hop.TokenPort(e.p.Pool.BaseMint, e.p.UserBaseATA)
 }
-func (e *SellExactIn) OutputMeasureAccount() solana.PublicKey { return e.p.UserQuoteATA }
+func (e *SellExactIn) Output() hop.Port {
+	return hop.TokenPort(e.p.Pool.QuoteMint, e.p.UserQuoteATA)
+}
 
 func (e *SellExactIn) BuildBlueprint(_ *hop.HopBuildCtx) (hop.HopBlueprint, error) {
 	return buildSwapBlueprint(e.p, e.prog, e.eventAuth, discSell, SellAmountInOffset, SellMinOutOffset, false)
@@ -238,12 +239,13 @@ func NewBuyExactIn(p BuyParams) (*BuyExactIn, error) {
 	return &BuyExactIn{p: p, prog: prog, eventAuth: ea}, nil
 }
 
-func (e *BuyExactIn) VenueID() string             { return "pump_amm_buy" }
-func (e *BuyExactIn) InputMint() solana.PublicKey { return e.p.Pool.QuoteMint }
-func (e *BuyExactIn) OutputMint() solana.PublicKey {
-	return e.p.Pool.BaseMint
+func (e *BuyExactIn) VenueID() string { return "pump_amm_buy" }
+func (e *BuyExactIn) Input() hop.Port {
+	return hop.TokenPort(e.p.Pool.QuoteMint, e.p.UserQuoteATA)
 }
-func (e *BuyExactIn) OutputMeasureAccount() solana.PublicKey { return e.p.UserBaseATA }
+func (e *BuyExactIn) Output() hop.Port {
+	return hop.TokenPort(e.p.Pool.BaseMint, e.p.UserBaseATA)
+}
 
 func (e *BuyExactIn) BuildBlueprint(_ *hop.HopBuildCtx) (hop.HopBlueprint, error) {
 	sp := SellParams{

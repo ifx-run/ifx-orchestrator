@@ -20,6 +20,9 @@ type ExactIn struct {
 	InMint       solana.PublicKey
 	OutMint      solana.PublicKey
 	MeasureATA   solana.PublicKey
+	InputATA     solana.PublicKey
+	NativeIn     bool
+	NativeOut    bool
 	ProgramID    solana.PublicKey
 	Accounts     []*solana.AccountMeta
 	AmountOffset uint16
@@ -41,10 +44,39 @@ func New(id string, program, inMint, outMint, measureATA solana.PublicKey, accou
 	}
 }
 
-func (e *ExactIn) VenueID() string                        { return e.ID }
-func (e *ExactIn) InputMint() solana.PublicKey            { return e.InMint }
-func (e *ExactIn) OutputMint() solana.PublicKey           { return e.OutMint }
-func (e *ExactIn) OutputMeasureAccount() solana.PublicKey { return e.MeasureATA }
+func (e *ExactIn) VenueID() string { return e.ID }
+func (e *ExactIn) Input() hop.Port {
+	if e.NativeIn {
+		return hop.NativeSOLPort()
+	}
+	return hop.TokenPort(e.InMint, e.InputATA)
+}
+func (e *ExactIn) Output() hop.Port {
+	if e.NativeOut {
+		return hop.NativeSOLPort()
+	}
+	return hop.TokenPort(e.OutMint, e.MeasureATA)
+}
+
+// WithInput sets the source ATA used by HopConserve / native→token bridging.
+func (e *ExactIn) WithInput(ata solana.PublicKey) *ExactIn {
+	e.InputATA = ata
+	return e
+}
+
+// WithNativeIn marks the hop as spending user-wallet lamports.
+func (e *ExactIn) WithNativeIn() *ExactIn {
+	e.NativeIn = true
+	e.InMint = hop.WrappedSOLMint
+	return e
+}
+
+// WithNativeOut marks the hop as crediting user-wallet lamports.
+func (e *ExactIn) WithNativeOut() *ExactIn {
+	e.NativeOut = true
+	e.OutMint = hop.WrappedSOLMint
+	return e
+}
 
 func (e *ExactIn) BuildBlueprint(_ *hop.HopBuildCtx) (hop.HopBlueprint, error) {
 	data := make([]byte, 16)

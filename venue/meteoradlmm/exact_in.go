@@ -43,19 +43,19 @@ func (p PoolState) side(inputMint, outputMint solana.PublicKey) error {
 
 // Params configures one DLMM ExactIn hop.
 type Params struct {
-	ProgramID              solana.PublicKey
-	User                   solana.PublicKey
-	LbPair                 solana.PublicKey
-	Pool                   PoolState
-	InputMint              solana.PublicKey
-	OutputMint             solana.PublicKey
-	UserInputATA           solana.PublicKey
-	UserOutputATA          solana.PublicKey
-	TokenXProgram          solana.PublicKey
-	TokenYProgram          solana.PublicKey
-	BinArrayBitmapExtension solana.PublicKey // zero => program id (none)
-	HostFeeIn              solana.PublicKey   // zero => program id (none)
-	BinArrays              []solana.PublicKey // remaining bin arrays
+	ProgramID               solana.PublicKey
+	User                    solana.PublicKey
+	LbPair                  solana.PublicKey
+	Pool                    PoolState
+	InputMint               solana.PublicKey
+	OutputMint              solana.PublicKey
+	UserInputATA            solana.PublicKey
+	UserOutputATA           solana.PublicKey
+	TokenXProgram           solana.PublicKey
+	TokenYProgram           solana.PublicKey
+	BinArrayBitmapExtension solana.PublicKey   // zero => program id (none)
+	HostFeeIn               solana.PublicKey   // zero => program id (none)
+	BinArrays               []solana.PublicKey // remaining bin arrays
 }
 
 // ExactIn is a Meteora DLMM ExactInHop.
@@ -85,10 +85,13 @@ func NewExactIn(p Params) (*ExactIn, error) {
 	return &ExactIn{p: p, prog: prog}, nil
 }
 
-func (e *ExactIn) VenueID() string                        { return "meteora_dlmm" }
-func (e *ExactIn) InputMint() solana.PublicKey            { return e.p.InputMint }
-func (e *ExactIn) OutputMint() solana.PublicKey           { return e.p.OutputMint }
-func (e *ExactIn) OutputMeasureAccount() solana.PublicKey { return e.p.UserOutputATA }
+func (e *ExactIn) VenueID() string { return "meteora_dlmm" }
+func (e *ExactIn) Input() hop.Port {
+	return hop.TokenPort(e.p.InputMint, e.p.UserInputATA)
+}
+func (e *ExactIn) Output() hop.Port {
+	return hop.TokenPort(e.p.OutputMint, e.p.UserOutputATA)
+}
 
 func eventAuthority(programID solana.PublicKey) (solana.PublicKey, error) {
 	pda, _, err := solana.FindProgramAddress([][]byte{[]byte("__event_authority")}, programID)

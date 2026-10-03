@@ -58,12 +58,13 @@ func NewSellV2(p SellQuoteV2Params) (*SellV2, error) {
 	return &SellV2{p: p, userBaseATA: baseATA, userQuoteATA: quoteATA}, nil
 }
 
-func (e *SellV2) VenueID() string             { return "pumpfun_sell_v2" }
-func (e *SellV2) InputMint() solana.PublicKey { return e.p.BaseMint }
-func (e *SellV2) OutputMint() solana.PublicKey {
-	return e.p.QuoteMint
+func (e *SellV2) VenueID() string { return "pumpfun_sell_v2" }
+func (e *SellV2) Input() hop.Port {
+	return hop.TokenPort(e.p.BaseMint, e.userBaseATA)
 }
-func (e *SellV2) OutputMeasureAccount() solana.PublicKey { return e.userQuoteATA }
+func (e *SellV2) Output() hop.Port {
+	return hop.TokenPort(e.p.QuoteMint, e.userQuoteATA)
+}
 
 func (e *SellV2) BuildBlueprint(_ *hop.HopBuildCtx) (hop.HopBlueprint, error) {
 	accts, err := resolveQuoteV2Accounts(BuyQuoteV2Params{

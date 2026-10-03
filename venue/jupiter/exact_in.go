@@ -10,7 +10,7 @@
 //
 // Caller fetches POST /swap/v1/swap-instructions and passes only swapInstruction
 // (not the full /swap transaction). Prefer wrapAndUnwrapSol=false and a concrete
-// destinationTokenAccount; ATA / SOL wrap belong to Features. Do not set
+// destinationTokenAccount; ATA / SOL wrap belong to compile SolIn/SolOut and Features. Do not set
 // useTokenLedger — those ixs have no patchable in_amount.
 package jupiter
 
@@ -58,6 +58,7 @@ type APIInstruction struct {
 type Params struct {
 	InputMint     solana.PublicKey
 	OutputMint    solana.PublicKey
+	UserInputATA  solana.PublicKey // optional; HopConserve input check
 	UserOutputATA solana.PublicKey
 	Swap          solana.Instruction
 }
@@ -192,10 +193,13 @@ func cloneMetas(in []*solana.AccountMeta) []*solana.AccountMeta {
 	return out
 }
 
-func (e *ExactIn) VenueID() string                        { return "jupiter_v6" }
-func (e *ExactIn) InputMint() solana.PublicKey            { return e.p.InputMint }
-func (e *ExactIn) OutputMint() solana.PublicKey           { return e.p.OutputMint }
-func (e *ExactIn) OutputMeasureAccount() solana.PublicKey { return e.p.UserOutputATA }
+func (e *ExactIn) VenueID() string { return "jupiter_v6" }
+func (e *ExactIn) Input() hop.Port {
+	return hop.TokenPort(e.p.InputMint, e.p.UserInputATA)
+}
+func (e *ExactIn) Output() hop.Port {
+	return hop.TokenPort(e.p.OutputMint, e.p.UserOutputATA)
+}
 
 func (e *ExactIn) BuildBlueprint(_ *hop.HopBuildCtx) (hop.HopBlueprint, error) {
 	data := append([]byte(nil), e.data...)

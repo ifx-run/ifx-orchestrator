@@ -40,14 +40,14 @@ const (
 
 // PoolState holds CLMM pool fields for routing vaults/mints.
 type PoolState struct {
-	AmmConfig       solana.PublicKey
-	TokenMint0      solana.PublicKey
-	TokenMint1      solana.PublicKey
-	TokenVault0     solana.PublicKey
-	TokenVault1     solana.PublicKey
-	ObservationKey  solana.PublicKey
-	TokenProgram0   solana.PublicKey
-	TokenProgram1   solana.PublicKey
+	AmmConfig      solana.PublicKey
+	TokenMint0     solana.PublicKey
+	TokenMint1     solana.PublicKey
+	TokenVault0    solana.PublicKey
+	TokenVault1    solana.PublicKey
+	ObservationKey solana.PublicKey
+	TokenProgram0  solana.PublicKey
+	TokenProgram1  solana.PublicKey
 }
 
 // DecodePoolState parses a CLMM pool account (skips 8-byte disc).
@@ -96,15 +96,15 @@ func (p PoolState) side(inputMint, outputMint solana.PublicKey) (swapSide, error
 
 // Params configures one CLMM swap_v2 ExactIn hop.
 type Params struct {
-	ProgramID      solana.PublicKey
-	User           solana.PublicKey
-	PoolID         solana.PublicKey
-	Pool           PoolState
-	InputMint      solana.PublicKey
-	OutputMint     solana.PublicKey
-	UserInputATA   solana.PublicKey
-	UserOutputATA  solana.PublicKey
-	TickArrays []solana.PublicKey // remaining tick-array accounts (caller-supplied)
+	ProgramID     solana.PublicKey
+	User          solana.PublicKey
+	PoolID        solana.PublicKey
+	Pool          PoolState
+	InputMint     solana.PublicKey
+	OutputMint    solana.PublicKey
+	UserInputATA  solana.PublicKey
+	UserOutputATA solana.PublicKey
+	TickArrays    []solana.PublicKey // remaining tick-array accounts (caller-supplied)
 }
 
 // ExactIn is a Raydium CLMM ExactInHop.
@@ -133,10 +133,13 @@ func NewExactIn(p Params) (*ExactIn, error) {
 	return &ExactIn{p: p, prog: prog, side: s}, nil
 }
 
-func (e *ExactIn) VenueID() string                        { return "raydium_clmm" }
-func (e *ExactIn) InputMint() solana.PublicKey            { return e.p.InputMint }
-func (e *ExactIn) OutputMint() solana.PublicKey           { return e.p.OutputMint }
-func (e *ExactIn) OutputMeasureAccount() solana.PublicKey { return e.p.UserOutputATA }
+func (e *ExactIn) VenueID() string { return "raydium_clmm" }
+func (e *ExactIn) Input() hop.Port {
+	return hop.TokenPort(e.p.InputMint, e.p.UserInputATA)
+}
+func (e *ExactIn) Output() hop.Port {
+	return hop.TokenPort(e.p.OutputMint, e.p.UserOutputATA)
+}
 
 func (e *ExactIn) BuildBlueprint(_ *hop.HopBuildCtx) (hop.HopBlueprint, error) {
 	data := make([]byte, swapV2DataLen)

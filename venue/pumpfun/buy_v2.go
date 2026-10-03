@@ -58,12 +58,13 @@ func NewBuyExactQuoteInV2(p BuyQuoteV2Params) (*BuyExactQuoteInV2, error) {
 	return &BuyExactQuoteInV2{p: p, userBaseATA: baseATA, userQuoteATA: quoteATA}, nil
 }
 
-func (e *BuyExactQuoteInV2) VenueID() string             { return "pumpfun_buy_exact_quote_in_v2" }
-func (e *BuyExactQuoteInV2) InputMint() solana.PublicKey { return e.p.QuoteMint }
-func (e *BuyExactQuoteInV2) OutputMint() solana.PublicKey {
-	return e.p.BaseMint
+func (e *BuyExactQuoteInV2) VenueID() string { return "pumpfun_buy_exact_quote_in_v2" }
+func (e *BuyExactQuoteInV2) Input() hop.Port {
+	return hop.TokenPort(e.p.QuoteMint, e.userQuoteATA)
 }
-func (e *BuyExactQuoteInV2) OutputMeasureAccount() solana.PublicKey { return e.userBaseATA }
+func (e *BuyExactQuoteInV2) Output() hop.Port {
+	return hop.TokenPort(e.p.BaseMint, e.userBaseATA)
+}
 
 func (e *BuyExactQuoteInV2) BuildBlueprint(_ *hop.HopBuildCtx) (hop.HopBlueprint, error) {
 	accts, err := resolveQuoteV2Accounts(e.p, e.userBaseATA, e.userQuoteATA)

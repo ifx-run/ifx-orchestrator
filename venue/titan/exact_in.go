@@ -13,7 +13,7 @@
 // Caller quotes Titan (Gateway or Direct) and passes the T1TAN swap instruction
 // from route.instructions (use SelectSwap). Prefer titanSwapVersion=3,
 // outputWsol=true when chaining, and transactionTemplate so Titan sizes the
-// route next to our ifx ixs. ATA / SOL wrap belong to Features.
+// route next to our ifx ixs. Native SOL ↔ WSOL between hops is compile SolIn/SolOut.
 package titan
 
 import (
@@ -45,6 +45,7 @@ const minDataLen = 8 + 8 + 8 // disc + amount + minimum_amount_out
 type Params struct {
 	InputMint     solana.PublicKey
 	OutputMint    solana.PublicKey
+	UserInputATA  solana.PublicKey // optional; HopConserve input check
 	UserOutputATA solana.PublicKey
 	Swap          solana.Instruction
 }
@@ -133,10 +134,13 @@ func cloneMetas(in []*solana.AccountMeta) []*solana.AccountMeta {
 	return out
 }
 
-func (e *ExactIn) VenueID() string                        { return "titan" }
-func (e *ExactIn) InputMint() solana.PublicKey            { return e.p.InputMint }
-func (e *ExactIn) OutputMint() solana.PublicKey           { return e.p.OutputMint }
-func (e *ExactIn) OutputMeasureAccount() solana.PublicKey { return e.p.UserOutputATA }
+func (e *ExactIn) VenueID() string { return "titan" }
+func (e *ExactIn) Input() hop.Port {
+	return hop.TokenPort(e.p.InputMint, e.p.UserInputATA)
+}
+func (e *ExactIn) Output() hop.Port {
+	return hop.TokenPort(e.p.OutputMint, e.p.UserOutputATA)
+}
 
 func (e *ExactIn) BuildBlueprint(_ *hop.HopBuildCtx) (hop.HopBlueprint, error) {
 	data := append([]byte(nil), e.data...)

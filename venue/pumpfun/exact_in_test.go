@@ -22,8 +22,8 @@ func TestBuyExactSolInBlueprint(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if buy.InputMint() != pumpfun.NativeSOL {
-		t.Fatalf("input mint: %s", buy.InputMint())
+	if !buy.Input().Native || buy.Input().Mint != pumpfun.NativeSOL {
+		t.Fatalf("input port %+v", buy.Input())
 	}
 	bp, err := buy.BuildBlueprint(&hop.HopBuildCtx{User: user})
 	if err != nil {

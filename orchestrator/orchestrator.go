@@ -22,6 +22,9 @@ type Builder struct {
 	nodes            []hop.RouteNode
 	edges            []hop.RouteEdge
 	features         []feature.Feature
+	solIn            hop.SolForm
+	solOut           hop.SolForm
+	wsolAccount      solana.PublicKey
 }
 
 // New starts a builder for an existing public Frame scratch planner.
@@ -65,20 +68,32 @@ func (b *Builder) TokenAccountRent(v uint64) *Builder {
 	return b
 }
 
+// SolIn selects how the first hop is funded when it wants SOL (Native wraps AmountIn into WSOL).
+func (b *Builder) SolIn(form hop.SolForm) *Builder {
+	b.solIn = form
+	return b
+}
+
+// SolOut selects how the last hop's SOL is left (WSOL wraps native proceeds; Native unwraps WSOL proceeds).
+func (b *Builder) SolOut(form hop.SolForm) *Builder {
+	b.solOut = form
+	return b
+}
+
+// WSOLAccount sets the wrap destination for SolOut(WSOL). Zero derives ATA(user, WSOL).
+func (b *Builder) WSOLAccount(ata solana.PublicKey) *Builder {
+	b.wsolAccount = ata
+	return b
+}
+
 // Hop appends an ExactIn hop as a Full path edge.
-// The first hop creates source+dest nodes; later hops must match previous output mint.
+// The first hop creates source+dest nodes; later hops must match previous output mint
+// (wrapped SOL and native SOL share the So111 mint).
 func (b *Builder) Hop(h hop.ExactInHop) *Builder {
+	in, out := h.Input(), h.Output()
 	if len(b.nodes) == 0 {
-		// Placeholder source ATA unknown until hop provides input — use zero ATA for source measure
-		// (source is not measured for chaining). Venues should still set accounts in the blueprint.
-		b.nodes = append(b.nodes, hop.RouteNode{
-			Mint:         h.InputMint(),
-			TokenAccount: solana.PublicKey{}, // unused for measure on node 0 in path compile
-		})
-		b.nodes = append(b.nodes, hop.RouteNode{
-			Mint:         h.OutputMint(),
-			TokenAccount: h.OutputMeasureAccount(),
-		})
+		b.nodes = append(b.nodes, hop.NodeFromPort(in))
+		b.nodes = append(b.nodes, hop.NodeFromPort(out))
 		b.edges = append(b.edges, hop.RouteEdge{
 			From:  0,
 			To:    1,
@@ -88,25 +103,18 @@ func (b *Builder) Hop(h hop.ExactInHop) *Builder {
 		return b
 	}
 	prev := b.nodes[len(b.nodes)-1]
-	if prev.Mint != h.InputMint() {
-		// Deferred error at Build time via invalid graph / mint mismatch check
+	if prev.Mint != in.Mint {
 		b.edges = append(b.edges, hop.RouteEdge{
 			From:  hop.NodeID(len(b.nodes) - 1),
 			To:    hop.NodeID(len(b.nodes)),
 			Split: hop.Full(),
 			Hop:   mintMismatchHop{inner: h, want: prev.Mint},
 		})
-		b.nodes = append(b.nodes, hop.RouteNode{
-			Mint:         h.OutputMint(),
-			TokenAccount: h.OutputMeasureAccount(),
-		})
+		b.nodes = append(b.nodes, hop.NodeFromPort(out))
 		return b
 	}
 	from := hop.NodeID(len(b.nodes) - 1)
-	b.nodes = append(b.nodes, hop.RouteNode{
-		Mint:         h.OutputMint(),
-		TokenAccount: h.OutputMeasureAccount(),
-	})
+	b.nodes = append(b.nodes, hop.NodeFromPort(out))
 	to := hop.NodeID(len(b.nodes) - 1)
 	b.edges = append(b.edges, hop.RouteEdge{
 		From:  from,
@@ -134,7 +142,7 @@ func (b *Builder) Build() (*compile.Plan, error) {
 	}
 	for i, e := range b.edges {
 		if mm, ok := e.Hop.(mintMismatchHop); ok {
-			return nil, fmt.Errorf("hop[%d]: input mint %s != previous output %s", i, mm.inner.InputMint(), mm.want)
+			return nil, fmt.Errorf("hop[%d]: input mint %s != previous output %s", i, mm.inner.Input().Mint, mm.want)
 		}
 	}
 	return compile.Compile(compile.Params{
@@ -144,6 +152,9 @@ func (b *Builder) Build() (*compile.Plan, error) {
 		MinAmountOut:     b.minAmountOut,
 		UserLamports:     b.userLamports,
 		TokenAccountRent: b.tokenAccountRent,
+		SolIn:            b.solIn,
+		SolOut:           b.solOut,
+		WSOLAccount:      b.wsolAccount,
 		Route: hop.Route{
 			Nodes: b.nodes,
 			Edges: b.edges,
@@ -157,10 +168,9 @@ type mintMismatchHop struct {
 	want  solana.PublicKey
 }
 
-func (m mintMismatchHop) VenueID() string                         { return m.inner.VenueID() }
-func (m mintMismatchHop) InputMint() solana.PublicKey             { return m.inner.InputMint() }
-func (m mintMismatchHop) OutputMint() solana.PublicKey            { return m.inner.OutputMint() }
-func (m mintMismatchHop) OutputMeasureAccount() solana.PublicKey  { return m.inner.OutputMeasureAccount() }
+func (m mintMismatchHop) VenueID() string  { return m.inner.VenueID() }
+func (m mintMismatchHop) Input() hop.Port  { return m.inner.Input() }
+func (m mintMismatchHop) Output() hop.Port { return m.inner.Output() }
 func (m mintMismatchHop) BuildBlueprint(cx *hop.HopBuildCtx) (hop.HopBlueprint, error) {
 	return m.inner.BuildBlueprint(cx)
 }

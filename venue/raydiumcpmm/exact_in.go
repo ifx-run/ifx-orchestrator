@@ -66,9 +66,9 @@ func Authority(programID solana.PublicKey) (solana.PublicKey, error) {
 }
 
 type side struct {
-	InputMint, OutputMint         solana.PublicKey
-	InputVault, OutputVault       solana.PublicKey
-	InputProgram, OutputProgram   solana.PublicKey
+	InputMint, OutputMint       solana.PublicKey
+	InputVault, OutputVault     solana.PublicKey
+	InputProgram, OutputProgram solana.PublicKey
 }
 
 func (p PoolState) side(inputMint, outputMint solana.PublicKey) (side, error) {
@@ -131,10 +131,13 @@ func NewExactIn(p Params) (*ExactIn, error) {
 	return &ExactIn{p: p, prog: prog, auth: auth, side: s}, nil
 }
 
-func (e *ExactIn) VenueID() string                        { return "raydium_cpmm" }
-func (e *ExactIn) InputMint() solana.PublicKey            { return e.p.InputMint }
-func (e *ExactIn) OutputMint() solana.PublicKey           { return e.p.OutputMint }
-func (e *ExactIn) OutputMeasureAccount() solana.PublicKey { return e.p.UserOutputATA }
+func (e *ExactIn) VenueID() string { return "raydium_cpmm" }
+func (e *ExactIn) Input() hop.Port {
+	return hop.TokenPort(e.p.InputMint, e.p.UserInputATA)
+}
+func (e *ExactIn) Output() hop.Port {
+	return hop.TokenPort(e.p.OutputMint, e.p.UserOutputATA)
+}
 
 func (e *ExactIn) BuildBlueprint(_ *hop.HopBuildCtx) (hop.HopBlueprint, error) {
 	data := make([]byte, 24)

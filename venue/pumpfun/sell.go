@@ -9,9 +9,8 @@ import (
 
 // SellParams configures a native SOL ExactIn sell.
 //
-// Sell pays native SOL to the user wallet (not a WSOL ATA). Treat as a terminal hop:
-// OutputMeasureAccount is the user base ATA (input side) for identity only — chaining
-// via SplTokenAmount after sell will not capture SOL proceeds.
+// Sell credits native SOL to the user wallet (not a WSOL ATA). Compile wraps to
+// WSOL automatically when the next hop consumes a WSOL ATA, or when SolOut(WSOL).
 type SellParams struct {
 	User             solana.PublicKey
 	BaseMint         solana.PublicKey
@@ -47,10 +46,11 @@ func NewSellExactIn(p SellParams) (*SellExactIn, error) {
 	return &SellExactIn{p: p, userBaseATA: ata, tokenProgram: tp}, nil
 }
 
-func (e *SellExactIn) VenueID() string                        { return "pumpfun_sell" }
-func (e *SellExactIn) InputMint() solana.PublicKey            { return e.p.BaseMint }
-func (e *SellExactIn) OutputMint() solana.PublicKey           { return NativeSOL }
-func (e *SellExactIn) OutputMeasureAccount() solana.PublicKey { return e.userBaseATA }
+func (e *SellExactIn) VenueID() string { return "pumpfun_sell" }
+func (e *SellExactIn) Input() hop.Port {
+	return hop.TokenPort(e.p.BaseMint, e.userBaseATA)
+}
+func (e *SellExactIn) Output() hop.Port { return hop.NativeSOLPort() }
 
 func (e *SellExactIn) BuildBlueprint(_ *hop.HopBuildCtx) (hop.HopBlueprint, error) {
 	program := ProgramID

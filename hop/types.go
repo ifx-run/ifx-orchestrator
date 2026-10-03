@@ -70,6 +70,8 @@ type RouteNode struct {
 	TokenProgram solana.PublicKey
 	// Exists is true when the ATA is already initialized on-chain before the plan runs.
 	Exists bool
+	// Native is true when this endpoint is user-wallet lamports (mint must be Wrapped SOL).
+	Native bool
 }
 
 // PatchSite is a u64 LE write into instruction data (Exact CustomInstruction offset).
@@ -91,21 +93,21 @@ type HopBuildCtx struct {
 
 // ExactInHop produces one ExactIn DEX instruction blueprint.
 // Venues stay thin at this boundary: accounts + template + patch offsets only.
+// Input/Output describe what the venue CPI actually consumes and produces
+// (native SOL vs WSOL ATA). Compile adapts lanes when chaining.
 type ExactInHop interface {
 	VenueID() string
-	InputMint() solana.PublicKey
-	OutputMint() solana.PublicKey
-	// OutputMeasureAccount is the user-side ATA measured for hop chaining.
-	OutputMeasureAccount() solana.PublicKey
+	Input() Port
+	Output() Port
 	BuildBlueprint(cx *HopBuildCtx) (HopBlueprint, error)
 }
 
 // RouteEdge is one ExactIn step on the graph.
 type RouteEdge struct {
-	From  NodeID
-	To    NodeID
-	Split SplitBps
-	Hop   ExactInHop
+	From   NodeID
+	To     NodeID
+	Split  SplitBps
+	Hop    ExactInHop
 	MinOut *uint64
 }
 

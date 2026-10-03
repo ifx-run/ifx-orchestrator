@@ -43,10 +43,11 @@ func NewBuyExactSolIn(p BuyParams) (*BuyExactSolIn, error) {
 	return &BuyExactSolIn{p: p, userBaseATA: ata, tokenProgram: tp}, nil
 }
 
-func (e *BuyExactSolIn) VenueID() string                        { return "pumpfun_buy_exact_sol_in" }
-func (e *BuyExactSolIn) InputMint() solana.PublicKey            { return NativeSOL }
-func (e *BuyExactSolIn) OutputMint() solana.PublicKey           { return e.p.BaseMint }
-func (e *BuyExactSolIn) OutputMeasureAccount() solana.PublicKey { return e.userBaseATA }
+func (e *BuyExactSolIn) VenueID() string { return "pumpfun_buy_exact_sol_in" }
+func (e *BuyExactSolIn) Input() hop.Port { return hop.NativeSOLPort() }
+func (e *BuyExactSolIn) Output() hop.Port {
+	return hop.TokenPort(e.p.BaseMint, e.userBaseATA)
+}
 
 func (e *BuyExactSolIn) BuildBlueprint(_ *hop.HopBuildCtx) (hop.HopBlueprint, error) {
 	program := ProgramID

@@ -32,7 +32,7 @@ var (
 	discSell              = [8]byte{51, 230, 133, 164, 1, 127, 131, 173}
 	discBuyExactQuoteInV2 = [8]byte{194, 171, 28, 70, 104, 77, 91, 47}
 	discSellV2            = [8]byte{93, 246, 130, 60, 231, 233, 64, 178}
-	feeConfigConst    = []byte{
+	feeConfigConst        = []byte{
 		1, 86, 224, 246, 147, 102, 90, 207, 68, 219, 21, 104, 191, 23,
 		91, 170, 81, 137, 203, 151, 245, 210, 255, 59, 101, 93, 43,
 		182, 253, 109, 24, 176,
@@ -77,8 +77,8 @@ const (
 
 // CurveMeta is the subset of bonding-curve state needed to build accounts.
 type CurveMeta struct {
-	Creator        solana.PublicKey
-	IsMayhemMode   bool
+	Creator         solana.PublicKey
+	IsMayhemMode    bool
 	CashbackEnabled bool
 }
 

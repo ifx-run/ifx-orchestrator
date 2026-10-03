@@ -31,6 +31,11 @@ type Ctx struct {
 	// EdgeIndex is the edge currently being compiled (-1 outside the edge loop).
 	// MapForwardAmount / AfterEdge may read it.
 	EdgeIndex int
+
+	// HopConserve, when true, compile asserts per-hop output increase and
+	// (unless HopConserveSkipInput) input debit ≥ patched amount_in.
+	HopConserve          bool
+	HopConserveSkipInput bool
 }
 
 // Emit appends instructions to the plan.

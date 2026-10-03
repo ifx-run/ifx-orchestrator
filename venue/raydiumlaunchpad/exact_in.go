@@ -44,11 +44,11 @@ type PoolMeta struct {
 
 // BuyParams configures quote→base buy_exact_in.
 type BuyParams struct {
-	User            solana.PublicKey
-	PoolID          solana.PublicKey
-	Pool            PoolMeta
-	UserQuoteATA    solana.PublicKey
-	UserBaseATA     solana.PublicKey
+	User             solana.PublicKey
+	PoolID           solana.PublicKey
+	Pool             PoolMeta
+	UserQuoteATA     solana.PublicKey
+	UserBaseATA      solana.PublicKey
 	BaseTokenProgram solana.PublicKey // zero => Tokenkeg
 }
 
@@ -68,12 +68,13 @@ func NewBuyExactIn(p BuyParams) (*BuyExactIn, error) {
 	return &BuyExactIn{p: p}, nil
 }
 
-func (e *BuyExactIn) VenueID() string             { return "raydium_launchpad_buy" }
-func (e *BuyExactIn) InputMint() solana.PublicKey { return e.p.Pool.QuoteMint }
-func (e *BuyExactIn) OutputMint() solana.PublicKey {
-	return e.p.Pool.BaseMint
+func (e *BuyExactIn) VenueID() string { return "raydium_launchpad_buy" }
+func (e *BuyExactIn) Input() hop.Port {
+	return hop.TokenPort(e.p.Pool.QuoteMint, e.p.UserQuoteATA)
 }
-func (e *BuyExactIn) OutputMeasureAccount() solana.PublicKey { return e.p.UserBaseATA }
+func (e *BuyExactIn) Output() hop.Port {
+	return hop.TokenPort(e.p.Pool.BaseMint, e.p.UserBaseATA)
+}
 
 func (e *BuyExactIn) BuildBlueprint(_ *hop.HopBuildCtx) (hop.HopBlueprint, error) {
 	return buildBlueprint(e.p.User, e.p.PoolID, e.p.Pool, e.p.UserBaseATA, e.p.UserQuoteATA, e.p.BaseTokenProgram, discBuyExactIn)
@@ -105,12 +106,13 @@ func NewSellExactIn(p SellParams) (*SellExactIn, error) {
 	return &SellExactIn{p: p}, nil
 }
 
-func (e *SellExactIn) VenueID() string             { return "raydium_launchpad_sell" }
-func (e *SellExactIn) InputMint() solana.PublicKey { return e.p.Pool.BaseMint }
-func (e *SellExactIn) OutputMint() solana.PublicKey {
-	return e.p.Pool.QuoteMint
+func (e *SellExactIn) VenueID() string { return "raydium_launchpad_sell" }
+func (e *SellExactIn) Input() hop.Port {
+	return hop.TokenPort(e.p.Pool.BaseMint, e.p.UserBaseATA)
 }
-func (e *SellExactIn) OutputMeasureAccount() solana.PublicKey { return e.p.UserQuoteATA }
+func (e *SellExactIn) Output() hop.Port {
+	return hop.TokenPort(e.p.Pool.QuoteMint, e.p.UserQuoteATA)
+}
 
 func (e *SellExactIn) BuildBlueprint(_ *hop.HopBuildCtx) (hop.HopBlueprint, error) {
 	return buildBlueprint(e.p.User, e.p.PoolID, e.p.Pool, e.p.UserBaseATA, e.p.UserQuoteATA, e.p.BaseTokenProgram, discSellExactIn)

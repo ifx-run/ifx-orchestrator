@@ -18,8 +18,8 @@ Not a Jupiter-style best-path aggregator, and not a new on-chain router program.
 ## Status (Phase 0–4)
 
 - Framework: `AmountFlow`, `ExactInHop`, `compile`, `orchestrator`
-- Venues: `raydiumcpmm` / `raydiumammv4` / `raydiumclmm` / `raydiumlaunchpad` / `byrealclmm` / `pancakeswapclmm`, `meteoradammv2` / `meteoradlmm` / `meteoradbc`, `whirlpool`, `pumpfun` (bonding + v2), `pumpamm`, `jupiter`, `titan`, `mock`
-- Features: `AtaPolicy`, `rentpeak`, `flashrent`, `gassponsored` (SOL/WSOL/Token repay), `solfunding` (wrap + `UnwrapLamports`), `mevtip` (fixed / native-profit share), `arbcheck`, `feehook` (incl. mid-graph `AtNode`)
+- Venues: `raydiumcpmm` / `raydiumammv4` / `raydiumclmm` / `raydiumlaunchpad` / `byrealclmm` / `pancakeswapclmm`, `meteoradammv2` / `meteoradlmm` / `meteoradbc`, `whirlpool`, `lifinityv2`, `pumpfun` (bonding + v2), `pumpamm`, `jupiter`, `titan`, `mock`
+- Features: `AtaPolicy`, `rentpeak`, `flashrent`, `gassponsored` (SOL/WSOL/Token repay), `solfunding` (wrap + `UnwrapLamports`), `SolIn`/`SolOut` (native SOL ↔ WSOL between hops), `mevtip` (fixed / native-profit share), `arbcheck`, `hopconserve`, `feehook` (incl. mid-graph `AtNode`)
 
 Path discovery via Jupiter **quote**; hops are our venues **or** an aggregator leg (`venue/jupiter` JUP6, `venue/titan` T1TAN) so you can bind a custom hop before/after the aggregator (`examples/jupiter_simulate` is still quote → own venues).
 

@@ -72,16 +72,16 @@ func (p PoolState) validateDirection(inputMint, outputMint solana.PublicKey) err
 
 // Params configures one ExactIn DAMM v2 hop.
 type Params struct {
-	ProgramID      solana.PublicKey // zero => ProgramID
-	User           solana.PublicKey
-	PoolID         solana.PublicKey
-	Pool           PoolState
-	InputMint      solana.PublicKey
-	OutputMint     solana.PublicKey
-	UserInputATA   solana.PublicKey
-	UserOutputATA  solana.PublicKey
-	TokenProgramA  solana.PublicKey // pool mint A token program
-	TokenProgramB  solana.PublicKey // pool mint B token program
+	ProgramID     solana.PublicKey // zero => ProgramID
+	User          solana.PublicKey
+	PoolID        solana.PublicKey
+	Pool          PoolState
+	InputMint     solana.PublicKey
+	OutputMint    solana.PublicKey
+	UserInputATA  solana.PublicKey
+	UserOutputATA solana.PublicKey
+	TokenProgramA solana.PublicKey // pool mint A token program
+	TokenProgramB solana.PublicKey // pool mint B token program
 }
 
 // ExactIn is a Meteora DAMM v2 ExactInHop.
@@ -113,10 +113,13 @@ func NewExactIn(p Params) (*ExactIn, error) {
 	return &ExactIn{p: p, prog: prog, eventAuth: ea}, nil
 }
 
-func (e *ExactIn) VenueID() string                        { return "meteora_damm_v2" }
-func (e *ExactIn) InputMint() solana.PublicKey            { return e.p.InputMint }
-func (e *ExactIn) OutputMint() solana.PublicKey           { return e.p.OutputMint }
-func (e *ExactIn) OutputMeasureAccount() solana.PublicKey { return e.p.UserOutputATA }
+func (e *ExactIn) VenueID() string { return "meteora_damm_v2" }
+func (e *ExactIn) Input() hop.Port {
+	return hop.TokenPort(e.p.InputMint, e.p.UserInputATA)
+}
+func (e *ExactIn) Output() hop.Port {
+	return hop.TokenPort(e.p.OutputMint, e.p.UserOutputATA)
+}
 
 func (e *ExactIn) BuildBlueprint(_ *hop.HopBuildCtx) (hop.HopBlueprint, error) {
 	data := make([]byte, 25)
