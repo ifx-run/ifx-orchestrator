@@ -10,6 +10,8 @@ var JupiterLabelHint = map[string]string{
 	"raydium_launchpad_sell":        "Raydium Launchlab",
 	"byreal_clmm":                   "Byreal",
 	"pancakeswap_clmm":              "PancakeSwap",
+	"jupiter_v6":                    "Jupiter",
+	"titan":                         "Titan",
 	"meteora_damm_v2":               "Meteora DAMM v2",
 	"meteora_dlmm":                  "Meteora DLMM",
 	"meteora_dbc":                   "Dynamic Bonding Curve",

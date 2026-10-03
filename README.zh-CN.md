@@ -18,10 +18,10 @@ Solana **execution orchestrator / venue hub**：把外部给定的 hops 编成�
 ## 现状（Phase 0–4）
 
 - 框架：`AmountFlow`、`ExactInHop`、`compile`、`orchestrator`
-- Venue：`raydiumcpmm` / `raydiumammv4` / `raydiumclmm` / `raydiumlaunchpad` / `byrealclmm` / `pancakeswapclmm`、`meteoradammv2` / `meteoradlmm` / `meteoradbc`、`whirlpool`、`pumpfun`（内盘 + v2）、`pumpamm`、`mock`
-- Feature：`AtaPolicy`、`rentpeak`、`flashrent`、`gassponsored`（SOL/WSOL/Token 还款）、`solfunding`（wrap + `UnwrapLamports`）、`mevtip`、`feehook`（含图中 `AtNode`）
+- Venue：`raydiumcpmm` / `raydiumammv4` / `raydiumclmm` / `raydiumlaunchpad` / `byrealclmm` / `pancakeswapclmm`、`meteoradammv2` / `meteoradlmm` / `meteoradbc`、`whirlpool`、`pumpfun`（内盘 + v2）、`pumpamm`、`jupiter`、`titan`、`mock`
+- Feature：`AtaPolicy`、`rentpeak`、`flashrent`、`gassponsored`（SOL/WSOL/Token 还款）、`solfunding`（wrap + `UnwrapLamports`）、`mevtip`（定额 / native 利润抽成）、`arbcheck`、`feehook`（含图中 `AtNode`）
 
-路径发现用 Jupiter **quote only**；交易由本仓库 `ExactInHop` 自建（见 `examples/jupiter_simulate`）。
+路径发现用 Jupiter **quote**；hop 可以是自建 venue，也可以是聚合腿（`venue/jupiter` JUP6、`venue/titan` T1TAN），方便在聚合器前后再绑一条自家腿（`examples/jupiter_simulate` 仍是 quote → 自建 venue）。
 
 ```bash
 go test ./...

@@ -9,7 +9,11 @@
 1. `VenueID`、`InputMint`、`OutputMint`、`OutputMeasureAccount`
 2. `BuildBlueprint` → amount 置 0 的模板 ix + `PatchSite` 偏移
 
-参考 `venue/raydiumcpmm`、`venue/raydiumammv4`、`venue/raydiumclmm`、`venue/raydiumlaunchpad`、`venue/byrealclmm`、`venue/pancakeswapclmm`、`venue/meteoradammv2`、`venue/meteoradlmm`、`venue/meteoradbc`、`venue/whirlpool`、`venue/pumpfun`、`venue/pumpamm`。Jupiter 标签 hint 见 `venue/catalog.go`。
+参考 `venue/raydiumcpmm`、`venue/raydiumammv4`、`venue/raydiumclmm`、`venue/raydiumlaunchpad`、`venue/byrealclmm`、`venue/pancakeswapclmm`、`venue/meteoradammv2`、`venue/meteoradlmm`、`venue/meteoradbc`、`venue/whirlpool`、`venue/pumpfun`、`venue/pumpamm`、`venue/jupiter`、`venue/titan`。Jupiter 标签 hint 见 `venue/catalog.go`。
+
+`jupiter`：只包 `POST /swap/v1/swap-instructions` 返回的 **swapInstruction**（`InstructionFromAPI`）。请设 `wrapAndUnwrapSol=false` 并指定用户 `destinationTokenAccount`；不要开 `useTokenLedger`。amount-in 与其它 hop 一样会被 patch，因此可以 `.Hop(自家).Hop(jup)` 或 `.Hop(jup).Hop(自家)`。setup/cleanup/compute-budget 仍走 Feature。注意账户数量 / 交易体积（Jupiter remaining accounts 很大）。
+
+`titan`：包 Titan quote 里的 T1TAN `swap_route` / `swap_route_v2`（`SelectSwap`）。amount @8、min_out @16（官方 CPI 布局）。建议 `titanSwapVersion=3`，后接 hop 需要 WSOL 时设 `outputWsol=true`，并用 `transactionTemplate` 让 Titan 按 ifx ix 体积选路。不要把 V2 的 wrap/ATA ix 塞进 hop —— 那些归 Feature。
 
 `pumpfun`：`NewBuyExactSolIn` / `NewSellExactIn`（原生 SOL）；以及 `BuyExactQuoteInV2` / `SellV2`（SPL quote）。Sell 原生 SOL 请作**终点 hop**。
 
@@ -29,7 +33,8 @@ orchestrator.New(scratch, user).
     Feature(gassponsored.New(sponsor, fixedCost)). // 或 FromNative(..., 12000).WithWSOL(...) / FromToken(...)
     Feature(solfunding.WrapAndUnwrap(wrapLamports, solfunding.UnwrapLamportsAll)).
     AtaPolicy(feature.AtaCreateAndCloseCreated).
-    Feature(mevtip.New(tipTo, tipLamports)).
+    Feature(arbcheck.Token(userATA, minProfit)). // 先注册 → AfterRoute 最后断言
+    Feature(mevtip.New(tipTo, tipLamports)).     // 或 ShareNative(tipTo, 500).WithWSOL(wsol)
     Feature(feehook.AtNode(1, feeTo).WithTokenBPS(50, feeATA)).
     Hop(...).
     Build()
@@ -76,9 +81,21 @@ gassponsored.FromToken(userATA, repayTokenATA, amountRaw).
 
 `New(sponsor, cost)` ≡ `FromNative(sponsor, cost, 10000)`。
 
-### MevTip / FeeHook
+### ArbCheck / MevTip / FeeHook
 
-- `mevtip.New` — `AfterRoute` 字面 tip
+原子环路（例如 Jupiter 两腿 A→B→A）：链下仍要有**真价差**（不同 `dexes`、Titan vs Jupiter、或自家 venue）。同一聚合器 A→B→A 的 quote 通常是负 EV。
+
+```go
+.Feature(arbcheck.Token(userA, minProfit)). // 或 Native(minLamports).WithWSOL(wsol)
+.Feature(mevtip.New(jitoTip, bribe)).
+.Hop(jupAB).Hop(jupBA)
+```
+
+- `arbcheck.Token(ata, minProfit)` — `after ≥ before + minProfit`（0 = 保本）
+- `arbcheck.Native(minProfit).WithWSOL(wsolATA)` — lamports + WSOL
+- **先注册 arbcheck**，AfterRoute 逆序才会在 tip/fee 之后做利润断言
+- `mevtip.New(receiver, lamports)` — `AfterRoute` 字面 System transfer
+- `mevtip.ShareNative(receiver, bps).WithMax(cap).WithWSOL(wsol)` — tip = floor(native 利润 × bps / 10000)；亏损则 tip 0（不 revert）。不超过当前 native lamports。硬地板用 `arbcheck`。
 - `feehook.Fixed` / `ProceedsBPS` — 路线结束时的 SOL 费
 - `feehook.AtNode(node, recipient).WithFixed(...).WithTokenBPS(...)` — Exact **fee_node_index**：该节点 in-edges 齐后扣一次（Fixed 在 AfterEdge；TokenBps 经 MapForwardAmount，下游 hop 看到净额）
 
