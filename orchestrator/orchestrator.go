@@ -38,7 +38,7 @@ func (b *Builder) AmountIn(v uint64) *Builder {
 	return b
 }
 
-// MinAmountOut sets the final min-out hint (patched when the last hop exposes MinOut site).
+// MinAmountOut is a last-hop fallback when that Hop() call omitted min_out. 0 is valid.
 func (b *Builder) MinAmountOut(v uint64) *Builder {
 	b.minAmountOut = &v
 	return b
@@ -86,29 +86,34 @@ func (b *Builder) WSOLAccount(ata solana.PublicKey) *Builder {
 	return b
 }
 
-// Hop appends an ExactIn hop as a Full path edge.
+// Hop appends an ExactIn hop as a Full path edge (no min_out unless h is hop.WithMinOut).
 // The first hop creates source+dest nodes; later hops must match previous output mint
 // (wrapped SOL and native SOL share the So111 mint).
 func (b *Builder) Hop(h hop.ExactInHop) *Builder {
-	in, out := h.Input(), h.Output()
+	return b.appendHop(h)
+}
+
+// HopWithMinOut is Hop with that hop's min_amount_out (0 allowed).
+func (b *Builder) HopWithMinOut(h hop.ExactInHop, minOut uint64) *Builder {
+	return b.appendHop(hop.WithMinOut(h, minOut))
+}
+
+func (b *Builder) appendHop(h hop.ExactInHop) *Builder {
+	min, bare := hop.SplitMinOut(h)
+	in, out := bare.Input(), bare.Output()
 	if len(b.nodes) == 0 {
 		b.nodes = append(b.nodes, hop.NodeFromPort(in))
 		b.nodes = append(b.nodes, hop.NodeFromPort(out))
 		b.edges = append(b.edges, hop.RouteEdge{
-			From:  0,
-			To:    1,
-			Split: hop.Full(),
-			Hop:   h,
+			From: 0, To: 1, Split: hop.Full(), Hop: bare, MinOut: min,
 		})
 		return b
 	}
 	prev := b.nodes[len(b.nodes)-1]
 	if prev.Mint != in.Mint {
 		b.edges = append(b.edges, hop.RouteEdge{
-			From:  hop.NodeID(len(b.nodes) - 1),
-			To:    hop.NodeID(len(b.nodes)),
-			Split: hop.Full(),
-			Hop:   mintMismatchHop{inner: h, want: prev.Mint},
+			From: hop.NodeID(len(b.nodes) - 1), To: hop.NodeID(len(b.nodes)),
+			Split: hop.Full(), Hop: mintMismatchHop{inner: bare, want: prev.Mint}, MinOut: min,
 		})
 		b.nodes = append(b.nodes, hop.NodeFromPort(out))
 		return b
@@ -117,18 +122,24 @@ func (b *Builder) Hop(h hop.ExactInHop) *Builder {
 	b.nodes = append(b.nodes, hop.NodeFromPort(out))
 	to := hop.NodeID(len(b.nodes) - 1)
 	b.edges = append(b.edges, hop.RouteEdge{
-		From:  from,
-		To:    to,
-		Split: hop.Full(),
-		Hop:   h,
+		From: from, To: to, Split: hop.Full(), Hop: bare, MinOut: min,
 	})
 	return b
 }
 
 // FromGraph sets an explicit graph (supports splits). Clears any prior Hop() path.
+// Hops may be hop.WithMinOut(...); MinOut is peeled onto the edge (edge.MinOut wins if already set).
 func (b *Builder) FromGraph(nodes []hop.RouteNode, edges []hop.RouteEdge) *Builder {
 	b.nodes = append([]hop.RouteNode(nil), nodes...)
-	b.edges = append([]hop.RouteEdge(nil), edges...)
+	b.edges = make([]hop.RouteEdge, len(edges))
+	for i, e := range edges {
+		min, bare := hop.SplitMinOut(e.Hop)
+		e.Hop = bare
+		if e.MinOut == nil {
+			e.MinOut = min
+		}
+		b.edges[i] = e
+	}
 	return b
 }
 

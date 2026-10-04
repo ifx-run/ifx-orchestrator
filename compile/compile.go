@@ -120,7 +120,7 @@ func Compile(p Params) (*Plan, error) {
 			amountBinding = *forward
 		}
 
-		// Optional min_out patch on last edge when provided on edge or route params.
+		// Per-edge MinOut (0 allowed); route MinAmountOut fills the last edge if unset.
 		minOut := edge.MinOut
 		if minOut == nil && i == len(p.Route.Edges)-1 {
 			minOut = p.MinAmountOut

@@ -60,6 +60,30 @@ func TestMockTwoHopPlanShape(t *testing.T) {
 	}
 }
 
+func TestPerHopMinOutIncludingZero(t *testing.T) {
+	frame := solana.MustPublicKeyFromBase58("Fr8dvcgrSYKjpvJd471hQD2QuEjF7656WiEuUSb54obu")
+	tape := 4096
+	s := scratch.ForPublicFrame(frame, constants.DefaultProgramID, &tape)
+	user := solana.NewWallet().PublicKey()
+	a, b, c := solana.NewWallet().PublicKey(), solana.NewWallet().PublicKey(), solana.NewWallet().PublicKey()
+	ataB, ataC := solana.NewWallet().PublicKey(), solana.NewWallet().PublicKey()
+	p := solana.NewWallet().PublicKey()
+	acc := []*solana.AccountMeta{{PublicKey: user, IsSigner: true, IsWritable: true}}
+
+	plan, err := orchestrator.New(s, user).
+		AmountIn(1_000).
+		HopWithMinOut(mock.New("a", p, a, b, ataB, acc), 0).
+		HopWithMinOut(mock.New("b", p, b, c, ataC, acc), 42).
+		Build()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Two hops each patch min_out ⇒ extra let ixs vs amount-only path.
+	if len(plan.Instructions) < 7 {
+		t.Fatalf("ix count %d, expected min_out patches on both hops", len(plan.Instructions))
+	}
+}
+
 func TestMintMismatch(t *testing.T) {
 	frame := solana.MustPublicKeyFromBase58("Fr8dvcgrSYKjpvJd471hQD2QuEjF7656WiEuUSb54obu")
 	tape := 1024

@@ -39,7 +39,9 @@ orchestrator.New(scratch, user).
     Feature(arbcheck.Token(userATA, minProfit)). // 先注册 → AfterRoute 最后断言
     Feature(mevtip.New(tipTo, tipLamports)).     // 或 ShareNative(tipTo, 500).WithWSOL(wsol)
     Feature(feehook.AtNode(1, feeTo).WithTokenBPS(50, feeATA)).
-    Hop(...).
+    HopWithMinOut(hop0, 0).             // 该跳 min_out（允许 0）
+    HopWithMinOut(hop1, minOut1).
+    // Hop(hop2) / MinAmountOut(final)  // 不设 min，或最后一跳回退
     Build()
 ```
 

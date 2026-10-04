@@ -104,10 +104,12 @@ type ExactInHop interface {
 
 // RouteEdge is one ExactIn step on the graph.
 type RouteEdge struct {
-	From   NodeID
-	To     NodeID
-	Split  SplitBps
-	Hop    ExactInHop
+	From  NodeID
+	To    NodeID
+	Split SplitBps
+	Hop   ExactInHop
+	// MinOut is patched into the hop when non-nil (0 is valid). Nil skips the patch
+	// unless this is the last edge and compile.Params.MinAmountOut is set.
 	MinOut *uint64
 }
 

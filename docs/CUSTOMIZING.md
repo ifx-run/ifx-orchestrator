@@ -39,7 +39,9 @@ orchestrator.New(scratch, user).
     Feature(arbcheck.Token(userATA, minProfit)). // first → AfterRoute asserts last
     Feature(mevtip.New(tipTo, tipLamports)).     // or ShareNative(tipTo, 500).WithWSOL(wsol)
     Feature(feehook.AtNode(1, feeTo).WithTokenBPS(50, feeATA)).
-    Hop(...).
+    HopWithMinOut(hop0, 0).             // per-hop min_out (0 allowed)
+    HopWithMinOut(hop1, minOut1).
+    // Hop(hop2) / MinAmountOut(final)  // no min, or last-hop fallback
     Build()
 ```
 
