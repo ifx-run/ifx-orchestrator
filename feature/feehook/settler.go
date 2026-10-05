@@ -64,17 +64,8 @@ func (s TokenTransferSettler) EmitFixed(cx *feature.Ctx, amount uint64) error {
 	if s.Source.IsZero() || s.Destination.IsZero() {
 		return fmt.Errorf("feehook: TokenTransferSettler Source and Destination are required")
 	}
-	lb := cx.Scratch.LetBuilder()
-	bind, err := lb.LetConstU64(amount)
-	if err != nil {
-		return err
-	}
-	ix, err := lb.BuildIx()
-	if err != nil {
-		return err
-	}
-	cx.Emit(ix)
-	return feature.EmitPatchedTokenTransfer(cx, s.Source, s.Destination, s.owner(cx), bind)
+	feature.EmitFixedTokenTransfer(cx, s.Source, s.Destination, s.owner(cx), amount)
+	return cx.Err()
 }
 
 func (s TokenTransferSettler) EmitPatched(cx *feature.Ctx, amount typed.ScratchValue) error {
@@ -99,17 +90,15 @@ func CustomIx(template solana.Instruction, amountOffset uint16) Settler {
 }
 
 func (s CustomSettler) EmitFixed(cx *feature.Ctx, amount uint64) error {
-	lb := cx.Scratch.LetBuilder()
-	bind, err := lb.LetConstU64(amount)
+	if s.Template == nil {
+		return fmt.Errorf("feehook: CustomSettler.Template is required")
+	}
+	baked, err := feature.BakeU64(s.Template, s.AmountOffset, amount)
 	if err != nil {
 		return err
 	}
-	ix, err := lb.BuildIx()
-	if err != nil {
-		return err
-	}
-	cx.Emit(ix)
-	return s.EmitPatched(cx, bind)
+	cx.Emit(baked)
+	return cx.Err()
 }
 
 func (s CustomSettler) EmitPatched(cx *feature.Ctx, amount typed.ScratchValue) error {
@@ -131,16 +120,14 @@ func (s SettlerFunc) EmitFixed(cx *feature.Ctx, amount uint64) error {
 		if s.Patched == nil {
 			return fmt.Errorf("feehook: SettlerFunc has no Fixed or Patched handler")
 		}
-		lb := cx.Scratch.LetBuilder()
+		lb, err := cx.Let()
+		if err != nil {
+			return err
+		}
 		bind, err := lb.LetConstU64(amount)
 		if err != nil {
 			return err
 		}
-		ix, err := lb.BuildIx()
-		if err != nil {
-			return err
-		}
-		cx.Emit(ix)
 		return s.Patched(cx, bind)
 	}
 	return s.Fixed(cx, amount)

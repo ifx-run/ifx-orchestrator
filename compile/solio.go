@@ -28,17 +28,21 @@ func measurePort(lb *scratch.LetBuilder, user solana.PublicKey, port hop.Port) (
 	return lb.SplTokenAmount(port.Account)
 }
 
-func wrapLamportsToWSOL(cx *feature.Ctx, amount typed.ScratchValue, dest, tokenProgram solana.PublicKey) error {
+func wrapLamportsToWSOL(cx *feature.Ctx, dest, tokenProgram solana.PublicKey, lit uint64, slot *typed.ScratchValue) error {
 	create, err := solfunding.CreateATAIdempotent(cx.User, cx.User, hop.WrappedSOLMint, tokenProgram)
 	if err != nil {
 		return err
 	}
 	cx.Emit(create)
-	if err := feature.EmitPatchedSystemTransfer(cx, cx.User, dest, amount); err != nil {
-		return err
+	if slot != nil {
+		if err := feature.EmitPatchedSystemTransfer(cx, cx.User, dest, *slot); err != nil {
+			return err
+		}
+	} else {
+		feature.EmitFixedSystemTransfer(cx, cx.User, dest, lit)
 	}
 	cx.Emit(solfunding.SyncNativeInstruction(dest, tokenProgram))
-	return nil
+	return cx.Err()
 }
 
 func unwrapWSOLToNative(cx *feature.Ctx, amount typed.ScratchValue, source, tokenProgram solana.PublicKey) error {
@@ -64,7 +68,7 @@ func adaptForward(cx *feature.Ctx, from, to hop.Port, delta typed.ScratchValue, 
 		if to.Account.IsZero() || !to.Mint.Equals(hop.WrappedSOLMint) {
 			return typed.ScratchValue{}, fmt.Errorf("native SOL can only wrap into a WSOL ATA")
 		}
-		if err := wrapLamportsToWSOL(cx, delta, to.Account, tokenProgram); err != nil {
+		if err := wrapLamportsToWSOL(cx, to.Account, tokenProgram, 0, &delta); err != nil {
 			return typed.ScratchValue{}, err
 		}
 		return delta, nil

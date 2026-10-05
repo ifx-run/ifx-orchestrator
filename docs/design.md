@@ -304,6 +304,14 @@ Acceptance: adding a hop = implement `ExactInHop` + `.Hop(...)`; the Exact-style
 - Do not copy Exact’s on-chain bugs / empty shells
 - **Go first**; Rust/TS SDK mirrors must not block MVP
 
+## Compiler principles (zero-cost ifx)
+
+Hard rules for when the builder may emit ifx. More items may be added. **Violations are bugs.**
+
+1. **Emit ifx only when required.** The test is **runtime Frame bindings**, not hop count. With no chained Δ, Frame asserts, or patched CPI that reads a slot, the output **must contain no ifx instructions, including `IfxResetFrame`**. Bake compile-time `amount_in` / `min_out` / fixed wrap / fixed fees. A **single hop** still needs Reset + Let + patch when a Feature measures after the hop (bps fee, `HopConserve`, arbcheck, …); two hops need it to forward Δ. Do not `let` a constant just to patch it.
+2. **Consecutive `IfxLet` must merge into one instruction.** Share one `LetBuilder` at construction via `feature.Ctx.Let()`; `Emit` of a non-let ix flushes. Two adjacent `Let`s that only bind two constants are forbidden.
+3. **Public API stays small and hard to misuse.** Keep Builder / Feature / hop surfaces short; do not require a Frame for constant-only plans (`New(nil, user)` is valid). Demand scratch only when a runtime binding is needed, with an error that says why. Do not present “let a constant then patch” as the happy path.
+
 ## Risks and mitigations
 
 - **Graph vs linear**: keep path API simple outside; write `AmountFlow` as a graph from day one

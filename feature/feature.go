@@ -2,6 +2,8 @@
 package feature
 
 import (
+	"fmt"
+
 	"github.com/gagliardetto/solana-go"
 	"github.com/ifx-run/ifx-orchestrator/hop"
 	"github.com/ifx-run/ifx/go-sdk/scratch"
@@ -36,10 +38,61 @@ type Ctx struct {
 	// (unless HopConserveSkipInput) input debit ≥ patched amount_in.
 	HopConserve          bool
 	HopConserveSkipInput bool
+
+	letOpen *scratch.LetBuilder
+	emitErr error
 }
 
-// Emit appends instructions to the plan.
+// Let returns the open ifx_let batch. Consecutive Let() calls share one instruction
+// until FlushLet or Emit of a non-let ix. Requires Scratch.
+func (c *Ctx) Let() (*scratch.LetBuilder, error) {
+	if c == nil || c.Scratch == nil {
+		return nil, fmt.Errorf("scratch is required for Frame bindings (chained hops, HopConserve, or Features that measure)")
+	}
+	if c.letOpen == nil {
+		c.letOpen = c.Scratch.LetBuilder()
+	}
+	return c.letOpen, nil
+}
+
+// FlushLet emits the open ifx_let if it has bindings. Safe to call when empty.
+func (c *Ctx) FlushLet() error {
+	if c == nil || c.letOpen == nil {
+		return nil
+	}
+	lb := c.letOpen
+	c.letOpen = nil
+	if len(lb.Finish().Bindings) == 0 {
+		return nil
+	}
+	ix, err := lb.BuildIx()
+	if err != nil {
+		return err
+	}
+	*c.Ixs = append(*c.Ixs, ix)
+	return nil
+}
+
+// Err is the first failure recorded by Emit (for example a Let flush error).
+func (c *Ctx) Err() error {
+	if c == nil {
+		return nil
+	}
+	return c.emitErr
+}
+
+func (c *Ctx) noteErr(err error) {
+	if err != nil && c.emitErr == nil {
+		c.emitErr = err
+	}
+}
+
+// Emit flushes any open ifx_let, then appends instructions.
 func (c *Ctx) Emit(ixs ...solana.Instruction) {
+	if err := c.FlushLet(); err != nil {
+		c.noteErr(err)
+		return
+	}
 	*c.Ixs = append(*c.Ixs, ixs...)
 }
 

@@ -43,6 +43,11 @@ func EmitFixedSystemTransfer(cx *Ctx, from, to solana.PublicKey, lamports uint64
 	cx.Emit(system.NewTransferInstruction(lamports, from, to).Build())
 }
 
+// EmitFixedTokenTransfer appends a plain SPL Token transfer (literal amount).
+func EmitFixedTokenTransfer(cx *Ctx, source, destination, owner solana.PublicKey, amount uint64) {
+	cx.Emit(token.NewTransferInstruction(amount, source, destination, owner, []solana.PublicKey{}).Build())
+}
+
 // EmitPatchedTokenTransfer appends an ifx CPI that patches classic SPL Token transfer amount.
 func EmitPatchedTokenTransfer(
 	cx *Ctx,

@@ -56,7 +56,10 @@ func (f *Feature) BeforeRoute(cx *feature.Ctx) error {
 	if f.TokenATA.IsZero() && !f.Native {
 		return fmt.Errorf("arbcheck: Token ATA or Native is required")
 	}
-	lb := cx.Scratch.LetBuilder()
+	lb, err := cx.Let()
+	if err != nil {
+		return err
+	}
 	if !f.TokenATA.IsZero() {
 		before, err := lb.SplTokenAmount(f.TokenATA)
 		if err != nil {
@@ -78,11 +81,6 @@ func (f *Feature) BeforeRoute(cx *feature.Ctx) error {
 			f.wsolBefore = &w
 		}
 	}
-	ix, err := lb.BuildIx()
-	if err != nil {
-		return err
-	}
-	cx.Emit(ix)
 	return nil
 }
 
@@ -104,7 +102,10 @@ func (f *Feature) assertToken(cx *feature.Ctx) error {
 	if f.tokenBefore == nil {
 		return fmt.Errorf("arbcheck: missing token baseline")
 	}
-	lb := cx.Scratch.LetBuilder()
+	lb, err := cx.Let()
+	if err != nil {
+		return err
+	}
 	after, err := lb.SplTokenAmount(f.TokenATA)
 	if err != nil {
 		return err
@@ -113,24 +114,22 @@ func (f *Feature) assertToken(cx *feature.Ctx) error {
 	if err != nil {
 		return err
 	}
-	ix, err := lb.BuildIx()
-	if err != nil {
-		return err
-	}
-	cx.Emit(ix)
 	assertIx, err := cx.Scratch.IxAssert(expr.Ge(expr.Ref(after.Index), expr.Ref(need.Index)))
 	if err != nil {
 		return err
 	}
 	cx.Emit(assertIx)
-	return nil
+	return cx.Err()
 }
 
 func (f *Feature) assertNative(cx *feature.Ctx) error {
 	if f.solBefore == nil {
 		return fmt.Errorf("arbcheck: missing native baseline")
 	}
-	lb := cx.Scratch.LetBuilder()
+	lb, err := cx.Let()
+	if err != nil {
+		return err
+	}
 	after, err := lb.Lamports(cx.User)
 	if err != nil {
 		return err
@@ -155,15 +154,10 @@ func (f *Feature) assertNative(cx *feature.Ctx) error {
 	if err != nil {
 		return err
 	}
-	ix, err := lb.BuildIx()
-	if err != nil {
-		return err
-	}
-	cx.Emit(ix)
 	assertIx, err := cx.Scratch.IxAssert(expr.Ge(expr.Ref(end.Index), expr.Ref(need.Index)))
 	if err != nil {
 		return err
 	}
 	cx.Emit(assertIx)
-	return nil
+	return cx.Err()
 }

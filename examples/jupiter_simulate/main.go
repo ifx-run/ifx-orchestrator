@@ -35,6 +35,9 @@ import (
 	"github.com/ifx-run/ifx/go-sdk/scratch"
 )
 
+// USER_PUBKEY: funded wallet for simulate (SigVerify=false; no private key needed).
+// USER_KEYPAIR: optional Solana JSON keypair path if you want a real signature.
+
 const (
 	wsolMint   = "So11111111111111111111111111111111111111112"
 	usdcMint   = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
@@ -72,7 +75,10 @@ func main() {
 	}
 	httpClient := newHTTPClient(proxyURL)
 
-	user := solana.NewWallet()
+	userPK, signer, err := resolveUser()
+	if err != nil {
+		log.Fatal(err)
+	}
 	amountIn := uint64(10_000_000) // 0.01 SOL
 	slippageBps := 50
 
@@ -88,7 +94,7 @@ func main() {
 		"rpc":     redactRPC(rpcURL),
 		"jupiter": jupBase,
 		"proxy":   proxyURL,
-		"user":    user.PublicKey().String(),
+		"user":    userPK.String(),
 		"quote": map[string]any{
 			"inAmount":  quote.InAmount,
 			"outAmount": quote.OutAmount,
@@ -110,7 +116,7 @@ func main() {
 	report["classified"] = kind
 	report["pool"] = leg.SwapInfo.AmmKey
 
-	hopImpl, buildNote, err := buildHopFromLeg(ctx, client, user.PublicKey(), leg)
+	hopImpl, buildNote, err := buildHopFromLeg(ctx, client, userPK, leg)
 	if err != nil {
 		report["buildError"] = err.Error()
 		report["note"] = "Jupiter discovery ok; this pool type needs more account decoding or is multi-hop — see venue packages"
@@ -123,17 +129,22 @@ func main() {
 	tape := 2048
 	s := scratch.ForPublicFrame(framePK, constants.DefaultProgramID, &tape)
 
-	plan, err := orchestrator.New(s, user.PublicKey()).
+	b := orchestrator.New(s, userPK).
 		AmountIn(amountIn).
 		MinAmountOut(quote.MinOut()).
-		AtaPolicy(feature.AtaCreateOnly).
-		Hop(hopImpl).
-		Build()
+		AtaPolicy(feature.AtaCreateOnly)
+	// Funded wallet usually holds native SOL; first hop WSOL ⇒ wrap AmountIn.
+	if hopImpl.Input().Mint.Equals(hop.WrappedSOLMint) && !hopImpl.Input().Native {
+		b = b.SolIn(hop.SolNative)
+		report["solIn"] = "native→WSOL wrap AmountIn"
+	}
+	plan, err := b.HopWithMinOut(hopImpl, quote.MinOut()).Build()
 	if err != nil {
 		report["compileError"] = err.Error()
 		encode(report)
 		os.Exit(1)
 	}
+	report["ixCount"] = len(plan.Instructions)
 
 	recent, err := client.GetLatestBlockhash(ctx, rpc.CommitmentConfirmed)
 	if err != nil {
@@ -142,19 +153,26 @@ func main() {
 	tx, err := solana.NewTransaction(
 		plan.Instructions,
 		recent.Value.Blockhash,
-		solana.TransactionPayer(user.PublicKey()),
+		solana.TransactionPayer(userPK),
 	)
 	if err != nil {
 		log.Fatalf("tx: %v", err)
 	}
-	_, err = tx.Sign(func(key solana.PublicKey) *solana.PrivateKey {
-		if key.Equals(user.PublicKey()) {
-			return &user.PrivateKey
+	if signer != nil {
+		_, err = tx.Sign(func(key solana.PublicKey) *solana.PrivateKey {
+			if key.Equals(signer.PublicKey()) {
+				return &signer.PrivateKey
+			}
+			return nil
+		})
+		if err != nil {
+			log.Fatalf("sign: %v", err)
 		}
-		return nil
-	})
-	if err != nil {
-		log.Fatalf("sign: %v", err)
+	} else {
+		// SigVerify=false: pad empty signatures for the required signers.
+		n := int(tx.Message.Header.NumRequiredSignatures)
+		tx.Signatures = make([]solana.Signature, n)
+		report["sign"] = "empty (USER_PUBKEY simulate)"
 	}
 
 	sim, err := client.SimulateTransactionWithOpts(ctx, tx, &rpc.SimulateTransactionOpts{
@@ -302,11 +320,11 @@ func buildHopFromLeg(ctx context.Context, client *rpc.Client, user solana.Public
 }
 
 type quoteResult struct {
-	InAmount               string     `json:"inAmount"`
-	OutAmount              string     `json:"outAmount"`
-	OtherAmountThreshold   string     `json:"otherAmountThreshold"`
-	PriceImpactPct         string     `json:"priceImpactPct"`
-	RoutePlan              []routeLeg `json:"routePlan"`
+	InAmount             string     `json:"inAmount"`
+	OutAmount            string     `json:"outAmount"`
+	OtherAmountThreshold string     `json:"otherAmountThreshold"`
+	PriceImpactPct       string     `json:"priceImpactPct"`
+	RoutePlan            []routeLeg `json:"routePlan"`
 }
 
 func (q *quoteResult) MinOut() uint64 {
@@ -331,6 +349,26 @@ func mintTokenProgram(ctx context.Context, client *rpc.Client, mint solana.Publi
 		return solana.PublicKey{}, fmt.Errorf("mint not found: %s", mint)
 	}
 	return info.Value.Owner, nil
+}
+
+func resolveUser() (solana.PublicKey, *solana.Wallet, error) {
+	if path := os.Getenv("USER_KEYPAIR"); path != "" {
+		pk, err := solana.PrivateKeyFromSolanaKeygenFile(path)
+		if err != nil {
+			return solana.PublicKey{}, nil, fmt.Errorf("USER_KEYPAIR: %w", err)
+		}
+		w := &solana.Wallet{PrivateKey: pk}
+		return w.PublicKey(), w, nil
+	}
+	if pub := os.Getenv("USER_PUBKEY"); pub != "" {
+		pk, err := solana.PublicKeyFromBase58(pub)
+		if err != nil {
+			return solana.PublicKey{}, nil, fmt.Errorf("USER_PUBKEY: %w", err)
+		}
+		return pk, nil, nil
+	}
+	w := solana.NewWallet()
+	return w.PublicKey(), w, nil
 }
 
 func resolveRPC() (string, error) {

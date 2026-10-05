@@ -61,7 +61,10 @@ func (f *Feature) BeforeRoute(cx *feature.Ctx) error {
 	if f.ShareBps > 10_000 {
 		return fmt.Errorf("mevtip: ShareBps must be 1..10000")
 	}
-	lb := cx.Scratch.LetBuilder()
+	lb, err := cx.Let()
+	if err != nil {
+		return err
+	}
 	sol, err := lb.Lamports(cx.User)
 	if err != nil {
 		return err
@@ -74,11 +77,6 @@ func (f *Feature) BeforeRoute(cx *feature.Ctx) error {
 		}
 		f.wsolBefore = &w
 	}
-	ix, err := lb.BuildIx()
-	if err != nil {
-		return err
-	}
-	cx.Emit(ix)
 	return nil
 }
 
@@ -100,7 +98,10 @@ func (f *Feature) afterShare(cx *feature.Ctx) error {
 	if f.solBefore == nil {
 		return fmt.Errorf("mevtip: missing native baseline")
 	}
-	lb := cx.Scratch.LetBuilder()
+	lb, err := cx.Let()
+	if err != nil {
+		return err
+	}
 	after, err := lb.Lamports(cx.User)
 	if err != nil {
 		return err
@@ -121,41 +122,29 @@ func (f *Feature) afterShare(cx *feature.Ctx) error {
 			return err
 		}
 	}
-	ix, err := lb.BuildIx()
-	if err != nil {
-		return err
-	}
-	cx.Emit(ix)
-
-	post := cx.Scratch.LetBuilder()
 	// Saturating: spending SOL (non-cycle) yields tip 0 instead of wrapping or reverting.
-	profit, err := post.LetEval(expr.SaturatingSub(expr.Ref(end.Index), expr.Ref(start.Index)))
+	profit, err := lb.LetEval(expr.SaturatingSub(expr.Ref(end.Index), expr.Ref(start.Index)))
 	if err != nil {
 		return err
 	}
-	bpsConst, err := post.LetConstU64(uint64(f.ShareBps))
+	bpsConst, err := lb.LetConstU64(uint64(f.ShareBps))
 	if err != nil {
 		return err
 	}
-	tip, err := post.LetEval(expr.BpsMulFloor(expr.Ref(profit.Index), expr.Ref(bpsConst.Index)))
+	tip, err := lb.LetEval(expr.BpsMulFloor(expr.Ref(profit.Index), expr.Ref(bpsConst.Index)))
 	if err != nil {
 		return err
 	}
 	// System transfer can only spend native lamports, not WSOL.
-	tip, err = post.LetEval(expr.Min(expr.Ref(tip.Index), expr.Ref(after.Index)))
+	tip, err = lb.LetEval(expr.Min(expr.Ref(tip.Index), expr.Ref(after.Index)))
 	if err != nil {
 		return err
 	}
 	if f.MaxLamports > 0 {
-		tip, err = post.LetEval(expr.Min(expr.Ref(tip.Index), expr.U64(f.MaxLamports)))
+		tip, err = lb.LetEval(expr.Min(expr.Ref(tip.Index), expr.U64(f.MaxLamports)))
 		if err != nil {
 			return err
 		}
 	}
-	postIx, err := post.BuildIx()
-	if err != nil {
-		return err
-	}
-	cx.Emit(postIx)
 	return feature.EmitPatchedSystemTransfer(cx, cx.User, f.TipReceiver, tip)
 }

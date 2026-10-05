@@ -65,13 +65,15 @@ func TestSellExactInCompiles(t *testing.T) {
 	}
 	found := false
 	for _, ix := range plan.Instructions {
-		if ix.ProgramID().Equals(constants.DefaultProgramID) {
+		if ix.ProgramID().Equals(pumpfun.ProgramID) {
 			found = true
-			break
+		}
+		if ix.ProgramID().Equals(constants.DefaultProgramID) {
+			t.Fatal("single-hop pumpfun plan must not emit ifx")
 		}
 	}
 	if !found {
-		t.Fatal("expected ifx instructions in plan")
+		t.Fatal("expected pumpfun venue instruction")
 	}
 }
 

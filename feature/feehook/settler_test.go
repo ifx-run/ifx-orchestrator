@@ -38,20 +38,88 @@ func TestCustomSolSettler(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	foundIfx := false
+	foundFee := false
 	for _, ix := range plan.Instructions {
 		if ix.ProgramID().Equals(constants.DefaultProgramID) {
-			foundIfx = true
+			t.Fatal("fixed custom fee must not use ifx")
 		}
-		// Custom fee is wrapped in ifx CPI, not emitted as bare feeProg.
 		if ix.ProgramID().Equals(feeProg) {
-			t.Fatal("expected custom fee via ifx CPI, not bare program id")
+			foundFee = true
+			got, err := ix.Data()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if binary.LittleEndian.Uint64(got[8:]) != 42_000 {
+				t.Fatalf("baked fee %d", binary.LittleEndian.Uint64(got[8:]))
+			}
 		}
 	}
-	if !foundIfx {
-		t.Fatal("expected ifx instructions")
+	if !foundFee {
+		t.Fatal("expected baked custom fee instruction")
 	}
-	_ = plan
+}
+
+func TestSingleHopProceedsBpsUsesIfx(t *testing.T) {
+	frame := solana.MustPublicKeyFromBase58("Fr8dvcgrSYKjpvJd471hQD2QuEjF7656WiEuUSb54obu")
+	tape := 2048
+	s := scratch.ForPublicFrame(frame, constants.DefaultProgramID, &tape)
+	user := solana.NewWallet().PublicKey()
+	treasury := solana.NewWallet().PublicKey()
+	plan, err := orchestrator.New(s, user).
+		AmountIn(1000).
+		Feature(feehook.ProceedsBPS(treasury, 30)).
+		Hop(mockHop(t, user)).
+		Build()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !hasIfx(plan.Instructions) {
+		t.Fatal("single-hop bps fee must emit ifx (measure Δ then patch transfer)")
+	}
+	if plan.Instructions[0].ProgramID() != constants.DefaultProgramID {
+		t.Fatal("ifx reset should be first when Frame is used")
+	}
+}
+
+func TestSingleHopProceedsBpsNeedsScratch(t *testing.T) {
+	user := solana.NewWallet().PublicKey()
+	_, err := orchestrator.New(nil, user).
+		AmountIn(1000).
+		Feature(feehook.ProceedsBPS(solana.NewWallet().PublicKey(), 30)).
+		Hop(mockHop(t, user)).
+		Build()
+	if err == nil {
+		t.Fatal("bps fee without scratch should fail")
+	}
+}
+
+func TestSingleHopTokenBpsUsesIfx(t *testing.T) {
+	frame := solana.MustPublicKeyFromBase58("Fr8dvcgrSYKjpvJd471hQD2QuEjF7656WiEuUSb54obu")
+	tape := 2048
+	s := scratch.ForPublicFrame(frame, constants.DefaultProgramID, &tape)
+	user := solana.NewWallet().PublicKey()
+	recv := solana.NewWallet().PublicKey()
+	h := mockHop(t, user)
+	plan, err := orchestrator.New(s, user).
+		AmountIn(1000).
+		Feature(feehook.AtNode(1, recv).WithTokenBPS(50, recv)).
+		Hop(h).
+		Build()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !hasIfx(plan.Instructions) {
+		t.Fatal("single-hop token bps must emit ifx")
+	}
+}
+
+func hasIfx(ixs []solana.Instruction) bool {
+	for _, ix := range ixs {
+		if ix.ProgramID().Equals(constants.DefaultProgramID) {
+			return true
+		}
+	}
+	return false
 }
 
 func mockHop(t *testing.T, user solana.PublicKey) *mock.ExactIn {

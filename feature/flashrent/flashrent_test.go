@@ -77,8 +77,8 @@ func TestCustomBackendAlways(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !plan.Instructions[1].ProgramID().Equals(borrowProg) {
-		t.Fatalf("expected custom borrow early, got %s", plan.Instructions[1].ProgramID())
+	if !plan.Instructions[0].ProgramID().Equals(borrowProg) {
+		t.Fatalf("expected custom borrow first, got %s", plan.Instructions[0].ProgramID())
 	}
 	if !plan.Instructions[len(plan.Instructions)-1].ProgramID().Equals(repayProg) {
 		t.Fatalf("expected custom repay last")

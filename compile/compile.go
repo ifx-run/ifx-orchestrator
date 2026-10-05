@@ -1,4 +1,4 @@
-// Package compile turns a Route + Features into an ifx instruction plan.
+// Package compile turns a Route + Features into an instruction plan.
 package compile
 
 import (
@@ -9,10 +9,9 @@ import (
 	"github.com/ifx-run/ifx-orchestrator/amountflow"
 	"github.com/ifx-run/ifx-orchestrator/feature"
 	"github.com/ifx-run/ifx-orchestrator/hop"
-	"github.com/ifx-run/ifx/go-sdk/codec"
 	"github.com/ifx-run/ifx/go-sdk/expr"
+	"github.com/ifx-run/ifx/go-sdk/ix"
 	"github.com/ifx-run/ifx/go-sdk/patch"
-	"github.com/ifx-run/ifx/go-sdk/patchedcpi"
 	"github.com/ifx-run/ifx/go-sdk/scratch"
 	"github.com/ifx-run/ifx/go-sdk/typed"
 )
@@ -39,15 +38,12 @@ type Plan struct {
 	Instructions []solana.Instruction
 }
 
-// Compile builds reset → features → ExactIn edge loop (measure + patched CPI) → after_route.
+// Compile builds features → ExactIn edge loop (measure + hop CPI) → after_route.
 //
-// Hop0 patches amount_in from a let const(AmountIn) (or AmountFlow Full resolution).
-// Later hops patch amount_in from the previous hop's output delta (after SOL/WSOL
-// lane adapt and Feature.MapForwardAmount).
+// Compile-time amount_in / min_out / wrap lamports are baked into templates.
+// Frame (Reset / Let / patched CPI) is emitted only when a hop or Feature needs
+// a runtime binding. Consecutive Lets share one instruction via Ctx.Let.
 func Compile(p Params) (*Plan, error) {
-	if p.Scratch == nil {
-		return nil, fmt.Errorf("scratch is required")
-	}
 	if len(p.Route.Nodes) < 2 || len(p.Route.Edges) == 0 {
 		return nil, fmt.Errorf("route needs at least one edge")
 	}
@@ -60,7 +56,7 @@ func Compile(p Params) (*Plan, error) {
 		return nil, fmt.Errorf("amount flow: %w", err)
 	}
 
-	ixs := []solana.Instruction{p.Scratch.IxReset()}
+	ixs := []solana.Instruction{}
 	cx := &feature.Ctx{
 		Scratch:          p.Scratch,
 		User:             p.User,
@@ -77,6 +73,9 @@ func Compile(p Params) (*Plan, error) {
 		if err := f.BeforeRoute(cx); err != nil {
 			return nil, fmt.Errorf("before_route: %w", err)
 		}
+		if err := cx.Err(); err != nil {
+			return nil, fmt.Errorf("before_route: %w", err)
+		}
 	}
 
 	var forward *typed.ScratchValue // amount binding for next hop when chaining
@@ -85,6 +84,9 @@ func Compile(p Params) (*Plan, error) {
 		cx.EdgeIndex = i
 		for _, f := range p.Features {
 			if err := f.BeforeEdge(cx, i); err != nil {
+				return nil, fmt.Errorf("before_edge[%d]: %w", i, err)
+			}
+			if err := cx.Err(); err != nil {
 				return nil, fmt.Errorf("before_edge[%d]: %w", i, err)
 			}
 		}
@@ -100,47 +102,21 @@ func Compile(p Params) (*Plan, error) {
 			return nil, fmt.Errorf("blueprint[%d]: %w", i, err)
 		}
 
-		var amountBinding typed.ScratchValue
+		amountLit := step.AmountIn
+		var amountSlot *typed.ScratchValue
 		if i == 0 {
-			// First hop: bind AmountFlow-resolved amount (Full path => AmountIn).
-			lb := p.Scratch.LetBuilder()
-			amountBinding, err = lb.LetEval(expr.U64(step.AmountIn))
-			if err != nil {
-				return nil, err
-			}
-			letIx, err := lb.BuildIx()
-			if err != nil {
-				return nil, err
-			}
-			ixs = append(ixs, letIx)
+			// First hop: compile-time AmountFlow amount (Full path => AmountIn).
 		} else {
 			if forward == nil {
 				return nil, fmt.Errorf("missing forward amount at edge %d", i)
 			}
-			amountBinding = *forward
+			amountSlot = forward
 		}
 
 		// Per-edge MinOut (0 allowed); route MinAmountOut fills the last edge if unset.
 		minOut := edge.MinOut
 		if minOut == nil && i == len(p.Route.Edges)-1 {
 			minOut = p.MinAmountOut
-		}
-
-		patches := []codec.RawCpiPatch{
-			patch.RawCpiPatch(bp.AmountIn.Offset, amountBinding),
-		}
-		if minOut != nil && bp.MinOut != nil {
-			lb := p.Scratch.LetBuilder()
-			minBind, err := lb.LetEval(expr.U64(*minOut))
-			if err != nil {
-				return nil, err
-			}
-			letIx, err := lb.BuildIx()
-			if err != nil {
-				return nil, err
-			}
-			ixs = append(ixs, letIx)
-			patches = append(patches, patch.RawCpiPatch(bp.MinOut.Offset, minBind))
 		}
 
 		needChain := i < len(p.Route.Edges)-1
@@ -192,7 +168,7 @@ func Compile(p Params) (*Plan, error) {
 					if !inPort.Mint.Equals(hop.WrappedSOLMint) || inPort.Account.IsZero() {
 						return nil, fmt.Errorf("SolIn(Native) requires a native SOL or WSOL first hop")
 					}
-					if err := wrapLamportsToWSOL(cx, amountBinding, inPort.Account, p.wsolTokenProgram()); err != nil {
+					if err := wrapLamportsToWSOL(cx, inPort.Account, p.wsolTokenProgram(), amountLit, nil); err != nil {
 						return nil, fmt.Errorf("sol_in wrap: %w", err)
 					}
 				}
@@ -203,7 +179,10 @@ func Compile(p Params) (*Plan, error) {
 
 		var inBefore, outBefore typed.ScratchValue
 		if needIn || needOut {
-			lb := p.Scratch.LetBuilder()
+			lb, err := cx.Let()
+			if err != nil {
+				return nil, err
+			}
 			if needIn {
 				inBefore, err = measurePort(lb, p.User, inPort)
 				if err != nil {
@@ -216,21 +195,20 @@ func Compile(p Params) (*Plan, error) {
 					return nil, fmt.Errorf("measure output before[%d]: %w", i, err)
 				}
 			}
-			letIx, err := lb.BuildIx()
+		}
+
+		if err := emitExactIn(cx, bp, amountSlot, amountLit, minOut); err != nil {
+			return nil, fmt.Errorf("cpi[%d]: %w", i, err)
+		}
+		if err := cx.Err(); err != nil {
+			return nil, fmt.Errorf("cpi[%d]: %w", i, err)
+		}
+
+		if needIn {
+			lb, err := cx.Let()
 			if err != nil {
 				return nil, err
 			}
-			ixs = append(ixs, letIx)
-		}
-
-		cpiIx, err := rawCpi(p.Scratch, bp.Template, patches...)
-		if err != nil {
-			return nil, fmt.Errorf("cpi[%d]: %w", i, err)
-		}
-		ixs = append(ixs, cpiIx)
-
-		if needIn {
-			lb := p.Scratch.LetBuilder()
 			inAfter, err := measurePort(lb, p.User, inPort)
 			if err != nil {
 				return nil, fmt.Errorf("measure input after[%d]: %w", i, err)
@@ -239,25 +217,27 @@ func Compile(p Params) (*Plan, error) {
 			if err != nil {
 				return nil, err
 			}
-			letIx, err := lb.BuildIx()
-			if err != nil {
-				return nil, err
+			amtRef := expr.U64(amountLit)
+			if amountSlot != nil {
+				amtRef = expr.Ref(amountSlot.Index)
 			}
-			ixs = append(ixs, letIx)
 			geIn, err := p.Scratch.IxAssert(expr.Ge(expr.Ref(inBefore.Index), expr.Ref(inAfter.Index)))
 			if err != nil {
 				return nil, err
 			}
-			ixs = append(ixs, geIn)
-			geSpent, err := p.Scratch.IxAssert(expr.Ge(expr.Ref(spent.Index), expr.Ref(amountBinding.Index)))
+			cx.Emit(geIn)
+			geSpent, err := p.Scratch.IxAssert(expr.Ge(expr.Ref(spent.Index), amtRef))
 			if err != nil {
 				return nil, err
 			}
-			ixs = append(ixs, geSpent)
+			cx.Emit(geSpent)
 		}
 
 		if needOut {
-			lb := p.Scratch.LetBuilder()
+			lb, err := cx.Let()
+			if err != nil {
+				return nil, err
+			}
 			outAfter, err := measurePort(lb, p.User, outPort)
 			if err != nil {
 				return nil, fmt.Errorf("measure output after[%d]: %w", i, err)
@@ -277,17 +257,16 @@ func Compile(p Params) (*Plan, error) {
 					return nil, err
 				}
 			}
-			letIx, err := lb.BuildIx()
-			if err != nil {
-				return nil, err
-			}
-			ixs = append(ixs, letIx)
 			if cx.HopConserve {
 				geOut, err := p.Scratch.IxAssert(expr.Ge(expr.Ref(outAfter.Index), expr.Ref(minOutAmt.Index)))
 				if err != nil {
 					return nil, err
 				}
-				ixs = append(ixs, geOut)
+				cx.Emit(geOut)
+			} else if needAdapt {
+				if err := cx.FlushLet(); err != nil {
+					return nil, err
+				}
 			}
 			if needChain {
 				fwd, err := adaptForward(cx, outPort, nextIn, delta, p.wsolTokenProgram())
@@ -299,6 +278,9 @@ func Compile(p Params) (*Plan, error) {
 					if err != nil {
 						return nil, fmt.Errorf("map_forward[%d]: %w", i, err)
 					}
+					if err := cx.Err(); err != nil {
+						return nil, fmt.Errorf("map_forward[%d]: %w", i, err)
+					}
 				}
 				forward = &fwd
 			} else if settleWSOL && outPort.Native {
@@ -306,7 +288,7 @@ func Compile(p Params) (*Plan, error) {
 				if err != nil {
 					return nil, err
 				}
-				if err := wrapLamportsToWSOL(cx, delta, dest, p.wsolTokenProgram()); err != nil {
+				if err := wrapLamportsToWSOL(cx, dest, p.wsolTokenProgram(), 0, &delta); err != nil {
 					return nil, fmt.Errorf("sol_out wrap: %w", err)
 				}
 			} else if settleNative && !outPort.Native {
@@ -332,6 +314,9 @@ func Compile(p Params) (*Plan, error) {
 			if err := f.AfterEdge(cx, i); err != nil {
 				return nil, fmt.Errorf("after_edge[%d]: %w", i, err)
 			}
+			if err := cx.Err(); err != nil {
+				return nil, fmt.Errorf("after_edge[%d]: %w", i, err)
+			}
 		}
 	}
 
@@ -340,17 +325,57 @@ func Compile(p Params) (*Plan, error) {
 		if err := p.Features[i].AfterRoute(cx); err != nil {
 			return nil, fmt.Errorf("after_route: %w", err)
 		}
+		if err := cx.Err(); err != nil {
+			return nil, fmt.Errorf("after_route: %w", err)
+		}
 	}
 
-	return &Plan{Instructions: ixs}, nil
-}
-
-func rawCpi(s *scratch.FrameScratch, template solana.Instruction, patches ...codec.RawCpiPatch) (solana.Instruction, error) {
-	built, err := patchedcpi.RawCpi(template, patches...).Build(nil)
-	if err != nil {
+	if err := cx.FlushLet(); err != nil {
 		return nil, err
 	}
-	return s.IxCpi(built.WireBuild())
+	return &Plan{Instructions: prependResetIfUsed(p.Scratch, ixs)}, nil
+}
+
+func emitExactIn(cx *feature.Ctx, bp hop.HopBlueprint, amountSlot *typed.ScratchValue, amountLit uint64, minOut *uint64) error {
+	tmpl := bp.Template
+	var err error
+	if amountSlot == nil {
+		tmpl, err = feature.BakeU64(tmpl, bp.AmountIn.Offset, amountLit)
+		if err != nil {
+			return err
+		}
+	}
+	if minOut != nil && bp.MinOut != nil {
+		tmpl, err = feature.BakeU64(tmpl, bp.MinOut.Offset, *minOut)
+		if err != nil {
+			return err
+		}
+	}
+	if amountSlot == nil {
+		cx.Emit(tmpl)
+		return cx.Err()
+	}
+	return feature.EmitRawPatchedCPI(cx, tmpl, patch.RawCpiPatch(bp.AmountIn.Offset, *amountSlot))
+}
+
+func prependResetIfUsed(s *scratch.FrameScratch, ixs []solana.Instruction) []solana.Instruction {
+	if s == nil {
+		return ixs
+	}
+	used := false
+	for _, ins := range ixs {
+		if ins != nil && ins.ProgramID().Equals(s.ProgramID) {
+			used = true
+			break
+		}
+	}
+	if !used {
+		return ixs
+	}
+	reset := ix.BuildResetFrame(s.Frame, s.Authority, &ix.Options{ProgramID: s.ProgramID})
+	out := make([]solana.Instruction, 0, len(ixs)+1)
+	out = append(out, reset)
+	return append(out, ixs...)
 }
 
 // WriteU64LE is a helper for venue templates.

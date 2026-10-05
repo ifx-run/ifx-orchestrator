@@ -98,7 +98,7 @@ func TestExactInCompilesInOrchestrator(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(plan.Instructions) < 2 {
+	if len(plan.Instructions) < 1 {
 		t.Fatalf("ix count %d", len(plan.Instructions))
 	}
 }

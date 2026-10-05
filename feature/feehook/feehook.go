@@ -160,15 +160,20 @@ func (f *Feature) BeforeRoute(cx *feature.Ctx) error {
 		}
 	}
 
-	lb := cx.Scratch.LetBuilder()
-	needLet := false
+	needLet := f.ProceedsBps > 0 || (f.TokenBps > 0 && f.FeeNode != nil)
+	if !needLet {
+		return nil
+	}
+	lb, err := cx.Let()
+	if err != nil {
+		return err
+	}
 	if f.ProceedsBps > 0 {
 		before, err := lb.Lamports(cx.User)
 		if err != nil {
 			return err
 		}
 		f.userBefore = &before
-		needLet = true
 	}
 	if f.TokenBps > 0 && f.FeeNode != nil && f.TokenSettler == nil {
 		// Baseline only needed for default terminal TokenBps delta path.
@@ -181,7 +186,6 @@ func (f *Feature) BeforeRoute(cx *feature.Ctx) error {
 			return err
 		}
 		f.tokenBefore = &tb
-		needLet = true
 	} else if f.TokenBps > 0 && f.FeeNode != nil && f.TokenSettler != nil {
 		// Custom token settler still needs a baseline for terminal (non-chaining) FeeNode.
 		src, err := f.sourceATA(cx)
@@ -191,15 +195,7 @@ func (f *Feature) BeforeRoute(cx *feature.Ctx) error {
 				return err
 			}
 			f.tokenBefore = &tb
-			needLet = true
 		}
-	}
-	if needLet {
-		ix, err := lb.BuildIx()
-		if err != nil {
-			return err
-		}
-		cx.Emit(ix)
 	}
 	return nil
 }
@@ -245,7 +241,10 @@ func (f *Feature) MapForwardAmount(cx *feature.Ctx, amount feature.ForwardAmount
 		return amount, nil
 	}
 
-	lb := cx.Scratch.LetBuilder()
+	lb, err := cx.Let()
+	if err != nil {
+		return amount, err
+	}
 	bpsConst, err := lb.LetConstU64(uint64(f.TokenBps))
 	if err != nil {
 		return amount, err
@@ -264,11 +263,6 @@ func (f *Feature) MapForwardAmount(cx *feature.Ctx, amount feature.ForwardAmount
 	if err != nil {
 		return amount, err
 	}
-	ix, err := lb.BuildIx()
-	if err != nil {
-		return amount, err
-	}
-	cx.Emit(ix)
 
 	settler, err := f.tokenSettler(cx)
 	if err != nil {
@@ -289,7 +283,10 @@ func (f *Feature) chargeTokenFromDelta(cx *feature.Ctx) error {
 	if err != nil {
 		return err
 	}
-	lb := cx.Scratch.LetBuilder()
+	lb, err := cx.Let()
+	if err != nil {
+		return err
+	}
 	after, err := lb.SplTokenAmount(src)
 	if err != nil {
 		return err
@@ -312,11 +309,6 @@ func (f *Feature) chargeTokenFromDelta(cx *feature.Ctx) error {
 	if err != nil {
 		return err
 	}
-	ix, err := lb.BuildIx()
-	if err != nil {
-		return err
-	}
-	cx.Emit(ix)
 	settler, err := f.tokenSettler(cx)
 	if err != nil {
 		return err
@@ -341,7 +333,10 @@ func (f *Feature) AfterRoute(cx *feature.Ctx) error {
 		return fmt.Errorf("feehook: missing baseline for ProceedsBps")
 	}
 
-	post := cx.Scratch.LetBuilder()
+	post, err := cx.Let()
+	if err != nil {
+		return err
+	}
 	userAfter, err := post.Lamports(cx.User)
 	if err != nil {
 		return err
@@ -364,11 +359,6 @@ func (f *Feature) AfterRoute(cx *feature.Ctx) error {
 	if err != nil {
 		return err
 	}
-	postIx, err := post.BuildIx()
-	if err != nil {
-		return err
-	}
-	cx.Emit(postIx)
 
 	return f.solSettler().EmitPatched(cx, fee)
 }

@@ -27,7 +27,9 @@ type Builder struct {
 	wsolAccount      solana.PublicKey
 }
 
-// New starts a builder for an existing public Frame scratch planner.
+// New starts a builder. Scratch may be nil when the compiled plan will not use
+// Frame (single hop, compile-time amounts). Chained hops and measuring Features
+// still need a Frame planner.
 func New(s *scratch.FrameScratch, user solana.PublicKey) *Builder {
 	return &Builder{scratch: s, user: user}
 }
@@ -143,11 +145,8 @@ func (b *Builder) FromGraph(nodes []hop.RouteNode, edges []hop.RouteEdge) *Build
 	return b
 }
 
-// Build compiles the route into an ifx instruction plan.
+// Build compiles the route into an instruction plan.
 func (b *Builder) Build() (*compile.Plan, error) {
-	if b.scratch == nil {
-		return nil, fmt.Errorf("scratch is required")
-	}
 	if b.amountIn == 0 {
 		return nil, fmt.Errorf("AmountIn is required")
 	}

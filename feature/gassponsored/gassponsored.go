@@ -175,7 +175,10 @@ func (f *Feature) beforeNative(cx *feature.Ctx) error {
 		return fmt.Errorf("gassponsored: ProtectionBps must be > 0")
 	}
 
-	lb := cx.Scratch.LetBuilder()
+	lb, err := cx.Let()
+	if err != nil {
+		return err
+	}
 	before, err := lb.Lamports(cx.User)
 	if err != nil {
 		return err
@@ -196,11 +199,6 @@ func (f *Feature) beforeNative(cx *feature.Ctx) error {
 		}
 		f.ataBefore = &ataB
 	}
-	ix, err := lb.BuildIx()
-	if err != nil {
-		return err
-	}
-	cx.Emit(ix)
 	f.ataCostReady = false
 	f.ataCost = nil
 	return nil
@@ -213,17 +211,15 @@ func (f *Feature) beforeToken(cx *feature.Ctx) error {
 	if f.TokenAmount == 0 {
 		return fmt.Errorf("gassponsored: TokenAmount must be > 0")
 	}
-	lb := cx.Scratch.LetBuilder()
+	lb, err := cx.Let()
+	if err != nil {
+		return err
+	}
 	before, err := lb.SplTokenAmount(f.UserTokenATA)
 	if err != nil {
 		return err
 	}
 	f.tokenBefore = &before
-	ix, err := lb.BuildIx()
-	if err != nil {
-		return err
-	}
-	cx.Emit(ix)
 	return nil
 }
 
@@ -231,7 +227,10 @@ func (f *Feature) BeforeEdge(cx *feature.Ctx, edgeIndex int) error {
 	if f.Mode != ModeNative || edgeIndex != 0 || f.MeasureATA.IsZero() || f.ataCostReady || f.ataBefore == nil {
 		return nil
 	}
-	lb := cx.Scratch.LetBuilder()
+	lb, err := cx.Let()
+	if err != nil {
+		return err
+	}
 	after, err := lb.Lamports(f.MeasureATA)
 	if err != nil {
 		return err
@@ -243,11 +242,6 @@ func (f *Feature) BeforeEdge(cx *feature.Ctx, edgeIndex int) error {
 	if err != nil {
 		return err
 	}
-	ix, err := lb.BuildIx()
-	if err != nil {
-		return err
-	}
-	cx.Emit(ix)
 	f.ataCost = &cost
 	f.ataCostReady = true
 	return nil
@@ -268,12 +262,11 @@ func (f *Feature) afterNative(cx *feature.Ctx) error {
 	if f.userBefore == nil {
 		return fmt.Errorf("gassponsored: missing SOL baseline")
 	}
-	ataCost, err := f.resolveATACost(cx)
+
+	post, err := cx.Let()
 	if err != nil {
 		return err
 	}
-
-	post := cx.Scratch.LetBuilder()
 	userAfter, err := post.Lamports(cx.User)
 	if err != nil {
 		return err
@@ -302,8 +295,12 @@ func (f *Feature) afterNative(cx *feature.Ctx) error {
 		wsolProceeds = &wp
 	}
 
+	ataCostExpr := expr.U64(0)
+	if f.ataCost != nil {
+		ataCostExpr = expr.Ref(f.ataCost.Index)
+	}
 	base, err := post.LetEval(expr.Add(
-		expr.Ref(ataCost.Index),
+		ataCostExpr,
 		expr.U64(f.EstimatedCost),
 	))
 	if err != nil {
@@ -356,12 +353,6 @@ func (f *Feature) afterNative(cx *feature.Ctx) error {
 		fromSOL = settle
 	}
 
-	postIx, err := post.BuildIx()
-	if err != nil {
-		return err
-	}
-	cx.Emit(postIx)
-
 	assertIx, err := cx.Scratch.IxAssert(expr.Ge(
 		expr.Ref(available.Index),
 		expr.Ref(settle.Index),
@@ -383,7 +374,10 @@ func (f *Feature) afterToken(cx *feature.Ctx) error {
 	if f.tokenBefore == nil {
 		return fmt.Errorf("gassponsored: missing token baseline")
 	}
-	post := cx.Scratch.LetBuilder()
+	post, err := cx.Let()
+	if err != nil {
+		return err
+	}
 	after, err := post.SplTokenAmount(f.UserTokenATA)
 	if err != nil {
 		return err
@@ -395,43 +389,18 @@ func (f *Feature) afterToken(cx *feature.Ctx) error {
 	if err != nil {
 		return err
 	}
-	amount, err := post.LetConstU64(f.TokenAmount)
-	if err != nil {
-		return err
-	}
-	postIx, err := post.BuildIx()
-	if err != nil {
-		return err
-	}
-	cx.Emit(postIx)
 
 	assertIx, err := cx.Scratch.IxAssert(expr.Ge(
 		expr.Ref(proceeds.Index),
-		expr.Ref(amount.Index),
+		expr.U64(f.TokenAmount),
 	))
 	if err != nil {
 		return err
 	}
 	cx.Emit(assertIx)
 
-	return feature.EmitPatchedTokenTransfer(cx, f.UserTokenATA, f.RepayTokenATA, cx.User, amount)
-}
-
-func (f *Feature) resolveATACost(cx *feature.Ctx) (typed.ScratchValue, error) {
-	if f.ataCost != nil {
-		return *f.ataCost, nil
-	}
-	lb := cx.Scratch.LetBuilder()
-	z, err := lb.LetConstU64(0)
-	if err != nil {
-		return typed.ScratchValue{}, err
-	}
-	ix, err := lb.BuildIx()
-	if err != nil {
-		return typed.ScratchValue{}, err
-	}
-	cx.Emit(ix)
-	return z, nil
+	feature.EmitFixedTokenTransfer(cx, f.UserTokenATA, f.RepayTokenATA, cx.User, f.TokenAmount)
+	return cx.Err()
 }
 
 func (f *Feature) repayUnwrapWSOL(cx *feature.Ctx, amount typed.ScratchValue) error {

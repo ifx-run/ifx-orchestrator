@@ -145,3 +145,11 @@ Default settlers: `SystemTransferSettler` (SOL) / `TokenTransferSettler` (TokenB
 | `CreateOnly` | create missing | — |
 
 Mark `RouteNode.Exists = true` when the ATA is already on-chain so peak / create stay accurate.
+
+## Compiler principles (ifx)
+
+Zero-cost ifx — see [design.md](./design.md#compiler-principles-zero-cost-ifx). Short form:
+
+1. No runtime Frame need ⇒ **no ifx ix at all**, including reset. Constants go in templates, not `let`+patch. Hop count is not the test: a single hop plus bps fees / HopConserve **still needs ifx**.
+2. Consecutive `IfxLet` merge into **one** ix (`Ctx.Let()` shared batch; flushed on `Emit`).
+3. Public API stays short and hard to misuse: constant-only plans do not require a Frame (`New(nil, user)`); scratch is required only when a binding is needed.

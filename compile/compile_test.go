@@ -1,9 +1,11 @@
 package compile_test
 
 import (
+	"encoding/binary"
 	"testing"
 
 	"github.com/gagliardetto/solana-go"
+	"github.com/ifx-run/ifx-orchestrator/compile"
 	"github.com/ifx-run/ifx-orchestrator/feature"
 	"github.com/ifx-run/ifx-orchestrator/hop"
 	"github.com/ifx-run/ifx-orchestrator/orchestrator"
@@ -48,9 +50,16 @@ func TestMockTwoHopPlanShape(t *testing.T) {
 	if len(plan.Instructions) < 5 {
 		t.Fatalf("expected several ixs, got %d", len(plan.Instructions))
 	}
-	// reset must be first
+	// reset must be first when Frame is used (two-hop chain)
 	if plan.Instructions[0].ProgramID() != constants.DefaultProgramID {
 		t.Fatalf("first ix should be ifx, got %s", plan.Instructions[0].ProgramID())
+	}
+	data, err := plan.Instructions[0].Data()
+	if err != nil || len(data) == 0 || data[0] != constants.IxDiscResetFrame {
+		t.Fatalf("first ifx ix should be reset")
+	}
+	if consecutiveIfxLets(plan) {
+		t.Fatal("consecutive IfxLet instructions")
 	}
 	if counter.mapCalls != 1 {
 		t.Fatalf("MapForwardAmount calls=%d want 1", counter.mapCalls)
@@ -78,9 +87,30 @@ func TestPerHopMinOutIncludingZero(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Two hops each patch min_out ⇒ extra let ixs vs amount-only path.
-	if len(plan.Instructions) < 7 {
-		t.Fatalf("ix count %d, expected min_out patches on both hops", len(plan.Instructions))
+	if countIfx(plan) == 0 {
+		t.Fatal("two-hop plan should use ifx for the forwarded amount")
+	}
+	if consecutiveIfxLets(plan) {
+		t.Fatal("consecutive IfxLet instructions")
+	}
+	// Hop0 amount/min_out are compile-time: first non-ifx hop data is baked.
+	foundBake := false
+	for _, ix := range plan.Instructions {
+		if ix.ProgramID() == p {
+			data, err := ix.Data()
+			if err != nil || len(data) < 16 {
+				continue
+			}
+			if binary.LittleEndian.Uint64(data[0:8]) == 1000 && binary.LittleEndian.Uint64(data[8:16]) == 0 {
+				foundBake = true
+			}
+			if binary.LittleEndian.Uint64(data[8:16]) == 42 {
+				foundBake = true
+			}
+		}
+	}
+	if !foundBake {
+		t.Fatal("expected baked min_out/amount on a hop template")
 	}
 }
 
@@ -212,12 +242,16 @@ func TestSolInNativeWrapsWSOL(t *testing.T) {
 	p := solana.NewWallet().PublicKey()
 	acc := []*solana.AccountMeta{{PublicKey: user, IsSigner: true, IsWritable: true}}
 	wsolATA := solana.NewWallet().PublicKey()
-	if _, err := orchestrator.New(s, user).
+	plan, err := orchestrator.New(s, user).
 		AmountIn(100).
 		SolIn(hop.SolNative).
 		Hop(mock.New("ray", p, hop.WrappedSOLMint, solana.NewWallet().PublicKey(), solana.NewWallet().PublicKey(), acc).WithInput(wsolATA)).
-		Build(); err != nil {
+		Build()
+	if err != nil {
 		t.Fatal(err)
+	}
+	if n := countIfx(plan); n != 0 {
+		t.Fatalf("SolIn wrap of compile-time amount must not use ifx, got %d ifx ixs", n)
 	}
 }
 
@@ -236,4 +270,105 @@ func TestSolOutWSOLRejectsNonSOL(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected SolOut(WSOL) error")
 	}
+}
+
+func TestSingleHopZeroCostIfx(t *testing.T) {
+	user := solana.NewWallet().PublicKey()
+	p := solana.NewWallet().PublicKey()
+	a, b := solana.NewWallet().PublicKey(), solana.NewWallet().PublicKey()
+	ata := solana.NewWallet().PublicKey()
+	acc := []*solana.AccountMeta{{PublicKey: user, IsSigner: true, IsWritable: true}}
+
+	plan, err := orchestrator.New(nil, user).
+		AmountIn(1_000).
+		MinAmountOut(7).
+		Hop(mock.New("m", p, a, b, ata, acc)).
+		Build()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.Instructions) != 1 {
+		t.Fatalf("ix count %d want 1", len(plan.Instructions))
+	}
+	if plan.Instructions[0].ProgramID() != p {
+		t.Fatalf("want venue program, got %s", plan.Instructions[0].ProgramID())
+	}
+	data, err := plan.Instructions[0].Data()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if binary.LittleEndian.Uint64(data[0:8]) != 1_000 {
+		t.Fatalf("baked amount %d", binary.LittleEndian.Uint64(data[0:8]))
+	}
+	if binary.LittleEndian.Uint64(data[8:16]) != 7 {
+		t.Fatalf("baked min_out %d", binary.LittleEndian.Uint64(data[8:16]))
+	}
+}
+
+func TestTwoHopRequiresScratch(t *testing.T) {
+	user := solana.NewWallet().PublicKey()
+	p := solana.NewWallet().PublicKey()
+	a, b, c := solana.NewWallet().PublicKey(), solana.NewWallet().PublicKey(), solana.NewWallet().PublicKey()
+	ataB, ataC := solana.NewWallet().PublicKey(), solana.NewWallet().PublicKey()
+	acc := []*solana.AccountMeta{{PublicKey: user, IsSigner: true}}
+	_, err := orchestrator.New(nil, user).
+		AmountIn(100).
+		Hop(mock.New("a", p, a, b, ataB, acc)).
+		Hop(mock.New("b", p, b, c, ataC, acc)).
+		Build()
+	if err == nil {
+		t.Fatal("expected scratch required for chained hops")
+	}
+}
+
+func TestScratchPresentButUnusedHasNoIfx(t *testing.T) {
+	frame := solana.MustPublicKeyFromBase58("Fr8dvcgrSYKjpvJd471hQD2QuEjF7656WiEuUSb54obu")
+	tape := 1024
+	s := scratch.ForPublicFrame(frame, constants.DefaultProgramID, &tape)
+	user := solana.NewWallet().PublicKey()
+	p := solana.NewWallet().PublicKey()
+	a, b := solana.NewWallet().PublicKey(), solana.NewWallet().PublicKey()
+	ata := solana.NewWallet().PublicKey()
+	acc := []*solana.AccountMeta{{PublicKey: user, IsSigner: true}}
+	plan, err := orchestrator.New(s, user).
+		AmountIn(50).
+		Hop(mock.New("m", p, a, b, ata, acc)).
+		Build()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := countIfx(plan); n != 0 {
+		t.Fatalf("unused scratch still emitted %d ifx ixs", n)
+	}
+}
+
+func countIfx(plan *compile.Plan) int {
+	n := 0
+	for _, ix := range plan.Instructions {
+		if ix.ProgramID().Equals(constants.DefaultProgramID) {
+			n++
+		}
+	}
+	return n
+}
+
+func consecutiveIfxLets(plan *compile.Plan) bool {
+	prevLet := false
+	for _, ix := range plan.Instructions {
+		if !ix.ProgramID().Equals(constants.DefaultProgramID) {
+			prevLet = false
+			continue
+		}
+		data, err := ix.Data()
+		if err != nil || len(data) == 0 {
+			prevLet = false
+			continue
+		}
+		isLet := data[0] == constants.IxDiscLet
+		if isLet && prevLet {
+			return true
+		}
+		prevLet = isLet
+	}
+	return false
 }

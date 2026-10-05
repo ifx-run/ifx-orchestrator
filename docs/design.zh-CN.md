@@ -304,6 +304,14 @@ ifx-orchestrator/
 - 不把 Exact 的链上 bug / 空壳实现抄进来
 - **Go 先行**；Rust/TS SDK 镜像不挡 MVP
 
+## Compiler 原则（ifx 零成本）
+
+构造器对 ifx 的硬约束。后续还会加条；**违反视为 bug**。
+
+1. **只在必要时引入 ifx。** 判定看 **有没有运行时 Frame 绑定**，不看跳数。无链式 Δ、无 Frame assert、无依赖槽位的 patched CPI 时，输出里 **不得出现任何 ifx 指令，包括 `IfxResetFrame`**。构造期已知的 `amount_in` / `min_out` / 固定 wrap / 固定手续费写进模板。单跳在 hop 结束后按 bps 抽成、`HopConserve`、arbcheck 等 **同样必须** Reset + Let + patch；两跳传 Δ 也是。不要为常量 `let` 再 patch。
+2. **连续的 `IfxLet` 必须合并成一条。** 通过 `feature.Ctx.Let()` 在构造时共用一个 `LetBuilder`；`Emit` 非 let 指令时自动 flush。禁止相邻两条只为两个常量各发一次 `Let`。
+3. **对外接口简洁、不易误用。** Builder / Feature / hop 的公开 API 保持短链、少样板；常量路径不强制 Frame（`New(nil, user)` 合法）；需要运行时绑定时再要求 scratch，错误信息要说清原因。不要把「let 一个常量再 patch」暴露成推荐写法。
+
 ## 风险与缓解
 
 - **图 vs 线性**：对外 path API 简单；内部 `AmountFlow` 从第一天按图写，避免二次重构
