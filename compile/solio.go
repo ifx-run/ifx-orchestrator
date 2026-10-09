@@ -93,6 +93,15 @@ func countOutEdges(route hop.Route, from hop.NodeID) int {
 	return n
 }
 
+func firstOutEdge(route hop.Route, from hop.NodeID) *hop.RouteEdge {
+	for i := range route.Edges {
+		if route.Edges[i].From == from {
+			return &route.Edges[i]
+		}
+	}
+	return nil
+}
+
 func resolveWSOLATA(p Params, user solana.PublicKey) (solana.PublicKey, error) {
 	if !p.WSOLAccount.IsZero() {
 		return p.WSOLAccount, nil

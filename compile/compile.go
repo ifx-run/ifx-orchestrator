@@ -43,18 +43,24 @@ type Plan struct {
 // Compile-time amount_in / min_out / wrap lamports are baked into templates.
 // Frame (Reset / Let / patched CPI) is emitted only when a hop or Feature needs
 // a runtime binding. Consecutive Lets share one instruction via Ctx.Let.
+//
+// AmountFlow is a compile-time readiness / source-split calculator. Chained hop
+// amounts use runtime Frame bindings (forward Δ). Partial splits mid-graph are
+// rejected by Route.Validate until runtime fan-out is wired.
 func Compile(p Params) (*Plan, error) {
-	if len(p.Route.Nodes) < 2 || len(p.Route.Edges) == 0 {
-		return nil, fmt.Errorf("route needs at least one edge")
-	}
 	if p.AmountIn == 0 {
 		return nil, fmt.Errorf("amount_in must be > 0")
+	}
+	if err := p.Route.Validate(); err != nil {
+		return nil, err
 	}
 
 	flow, err := amountflow.New(p.AmountIn, len(p.Route.Nodes), p.Route.Edges)
 	if err != nil {
 		return nil, fmt.Errorf("amount flow: %w", err)
 	}
+
+	features := feature.SortByPhase(p.Features)
 
 	ixs := []solana.Instruction{}
 	cx := &feature.Ctx{
@@ -69,7 +75,7 @@ func Compile(p Params) (*Plan, error) {
 		EdgeIndex:        -1,
 	}
 
-	for _, f := range p.Features {
+	for _, f := range features {
 		if err := f.BeforeRoute(cx); err != nil {
 			return nil, fmt.Errorf("before_route: %w", err)
 		}
@@ -78,11 +84,14 @@ func Compile(p Params) (*Plan, error) {
 		}
 	}
 
-	var forward *typed.ScratchValue // amount binding for next hop when chaining
+	// nodeIn holds the runtime amount available at a node (measured hop output).
+	// Source node 0 uses compile-time AmountFlow literals (incl. Partial splits).
+	nodeIn := map[hop.NodeID]typed.ScratchValue{}
+	solInDone := false
 
 	for i, edge := range p.Route.Edges {
 		cx.EdgeIndex = i
-		for _, f := range p.Features {
+		for _, f := range features {
 			if err := f.BeforeEdge(cx, i); err != nil {
 				return nil, fmt.Errorf("before_edge[%d]: %w", i, err)
 			}
@@ -104,13 +113,16 @@ func Compile(p Params) (*Plan, error) {
 
 		amountLit := step.AmountIn
 		var amountSlot *typed.ScratchValue
-		if i == 0 {
-			// First hop: compile-time AmountFlow amount (Full path => AmountIn).
+		var amountBind typed.ScratchValue
+		if edge.From == 0 {
+			// Source: AmountFlow Full / Partial / remainder over AmountIn.
 		} else {
-			if forward == nil {
-				return nil, fmt.Errorf("missing forward amount at edge %d", i)
+			v, ok := nodeIn[edge.From]
+			if !ok {
+				return nil, fmt.Errorf("missing runtime amount at node %d for edge %d", edge.From, i)
 			}
-			amountSlot = forward
+			amountBind = v
+			amountSlot = &amountBind
 		}
 
 		// Per-edge MinOut (0 allowed); route MinAmountOut fills the last edge if unset.
@@ -119,7 +131,8 @@ func Compile(p Params) (*Plan, error) {
 			minOut = p.MinAmountOut
 		}
 
-		needChain := i < len(p.Route.Edges)-1
+		outDegTo := countOutEdges(p.Route, edge.To)
+		needChain := outDegTo > 0
 		inPort := edge.Hop.Input()
 		outPort := edge.Hop.Output()
 		if err := inPort.Validate(); err != nil {
@@ -131,10 +144,14 @@ func Compile(p Params) (*Plan, error) {
 
 		var nextIn hop.Port
 		if needChain {
-			if outPort.Native && countOutEdges(p.Route, edge.To) > 1 {
+			if outPort.Native && outDegTo > 1 {
 				return nil, fmt.Errorf("native SOL node cannot split; wrap to WSOL first (edge[%d])", i)
 			}
-			nextIn = p.Route.Edges[i+1].Hop.Input()
+			nextEdge := firstOutEdge(p.Route, edge.To)
+			if nextEdge == nil {
+				return nil, fmt.Errorf("internal: missing out-edge from node %d", edge.To)
+			}
+			nextIn = nextEdge.Hop.Input()
 			if err := nextIn.Validate(); err != nil {
 				return nil, fmt.Errorf("next input port[%d]: %w", i, err)
 			}
@@ -156,7 +173,8 @@ func Compile(p Params) (*Plan, error) {
 		needOut := (needAdapt || cx.HopConserve) && !sameATA
 		needIn := cx.HopConserve && !cx.HopConserveSkipInput && (inPort.Native || !inPort.Account.IsZero())
 
-		if i == 0 {
+		if edge.From == 0 && !solInDone {
+			solInDone = true
 			switch p.SolIn {
 			case hop.SolAsEmitted:
 			case hop.SolWSOL:
@@ -168,7 +186,7 @@ func Compile(p Params) (*Plan, error) {
 					if !inPort.Mint.Equals(hop.WrappedSOLMint) || inPort.Account.IsZero() {
 						return nil, fmt.Errorf("SolIn(Native) requires a native SOL or WSOL first hop")
 					}
-					if err := wrapLamportsToWSOL(cx, inPort.Account, p.wsolTokenProgram(), amountLit, nil); err != nil {
+					if err := wrapLamportsToWSOL(cx, inPort.Account, p.wsolTokenProgram(), p.AmountIn, nil); err != nil {
 						return nil, fmt.Errorf("sol_in wrap: %w", err)
 					}
 				}
@@ -273,7 +291,7 @@ func Compile(p Params) (*Plan, error) {
 				if err != nil {
 					return nil, fmt.Errorf("adapt[%d]: %w", i, err)
 				}
-				for _, f := range p.Features {
+				for _, f := range features {
 					fwd, err = f.MapForwardAmount(cx, fwd)
 					if err != nil {
 						return nil, fmt.Errorf("map_forward[%d]: %w", i, err)
@@ -282,7 +300,7 @@ func Compile(p Params) (*Plan, error) {
 						return nil, fmt.Errorf("map_forward[%d]: %w", i, err)
 					}
 				}
-				forward = &fwd
+				nodeIn[edge.To] = fwd
 			} else if settleWSOL && outPort.Native {
 				dest, err := resolveWSOLATA(p, p.User)
 				if err != nil {
@@ -300,6 +318,8 @@ func Compile(p Params) (*Plan, error) {
 			return nil, fmt.Errorf("cannot chain edge[%d]: no distinct output to measure", i)
 		}
 
+		// AmountFlow tracks compile-time readiness / source-split remainders only.
+		// Chained ExactIn amounts come from runtime forward bindings, not Complete.
 		if needChain {
 			if _, err := step.Complete(step.AmountIn); err != nil {
 				return nil, err
@@ -310,7 +330,7 @@ func Compile(p Params) (*Plan, error) {
 			}
 		}
 
-		for _, f := range p.Features {
+		for _, f := range features {
 			if err := f.AfterEdge(cx, i); err != nil {
 				return nil, fmt.Errorf("after_edge[%d]: %w", i, err)
 			}
@@ -320,9 +340,9 @@ func Compile(p Params) (*Plan, error) {
 		}
 	}
 
-	// AfterRoute runs in reverse so sandwich Features (FlashRent) repay after ATA closes.
-	for i := len(p.Features) - 1; i >= 0; i-- {
-		if err := p.Features[i].AfterRoute(cx); err != nil {
+	// AfterRoute runs in reverse of Phase order so Funding (FlashRent) repays last.
+	for i := len(features) - 1; i >= 0; i-- {
+		if err := features[i].AfterRoute(cx); err != nil {
 			return nil, fmt.Errorf("after_route: %w", err)
 		}
 		if err := cx.Err(); err != nil {

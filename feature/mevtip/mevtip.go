@@ -29,6 +29,9 @@ type Feature struct {
 	wsolBefore *typed.ScratchValue
 }
 
+// Phase settles after route baselines/asserts (same band as fees; registration order is stable).
+func (f *Feature) Phase() feature.Phase { return feature.PhaseSettlement }
+
 // New returns a fixed-lamports MevTip Feature.
 func New(tipReceiver solana.PublicKey, lamports uint64) *Feature {
 	return &Feature{TipReceiver: tipReceiver, Lamports: lamports}

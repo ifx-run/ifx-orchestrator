@@ -153,3 +153,4 @@ Zero-cost ifx — see [design.md](./design.md#compiler-principles-zero-cost-ifx)
 1. No runtime Frame need ⇒ **no ifx ix at all**, including reset. Constants go in templates, not `let`+patch. Hop count is not the test: a single hop plus bps fees / HopConserve **still needs ifx**.
 2. Consecutive `IfxLet` merge into **one** ix (`Ctx.Let()` shared batch; flushed on `Emit`).
 3. Public API stays short and hard to misuse: constant-only plans do not require a Frame (`New(nil, user)`); scratch is required only when a binding is needed.
+4. Features sort by `Phase` (Funding→Setup→Route→Settlement); registration order is stable within a phase. Partial splits only from the source node; mid-graph fan-out/fan-in rejected for now.

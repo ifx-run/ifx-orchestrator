@@ -312,6 +312,13 @@ Hard rules for when the builder may emit ifx. More items may be added. **Violati
 2. **Consecutive `IfxLet` must merge into one instruction.** Share one `LetBuilder` at construction via `feature.Ctx.Let()`; `Emit` of a non-let ix flushes. Two adjacent `Let`s that only bind two constants are forbidden.
 3. **Public API stays small and hard to misuse.** Keep Builder / Feature / hop surfaces short; do not require a Frame for constant-only plans (`New(nil, user)` is valid). Demand scratch only when a runtime binding is needed, with an error that says why. Do not present “let a constant then patch” as the happy path.
 
+## Graph / split / Feature order (current)
+
+- **`Route.Validate()`** is the compile gate for topo, mint chaining, and split sums.
+- **AmountFlow** is compile-time readiness + **source-node (0) Partial splits** (`MulBpsFloor`, overflow-safe). Hop outputs are stored in `nodeIn[to]` for later inbound edges; `Complete(amountOut)` is not on-chain output.
+- **Supported**: linear Full; source fan-out + sink fan-in (diamond). **Not yet** (Validate rejects): mid-graph Partial fan-out, mid-graph fan-in with further outs.
+- **Feature `Phase`**: Funding → Setup → Route → Settlement; `Before*` ascending, `AfterRoute` reversed. Registration order is stable within a phase — no silent “FlashRent before Ata” cross-phase rule.
+
 ## Risks and mitigations
 
 - **Graph vs linear**: keep path API simple outside; write `AmountFlow` as a graph from day one

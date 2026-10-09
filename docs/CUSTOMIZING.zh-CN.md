@@ -146,3 +146,4 @@ feehook.ProceedsBPS(treasury, 50).
 1. 没有运行时 Frame 需求 ⇒ **一条 ifx 指令都不要**，包括 reset。常量写进模板，不要 `let`+patch。跳数不是判据：单跳 + bps 抽成 / HopConserve 等 **照样要 ifx**。
 2. 连续 `IfxLet` 必须 **合成一条**（`Ctx.Let()` 共用 batch；`Emit` 时 flush）。
 3. 对外 API 短、难误用：单跳常量路径不强制 Frame（`New(nil, user)`）；需要绑定时再要 scratch。
+4. Feature 用 `Phase` 排序（Funding→Setup→Route→Settlement）；同相内仍按注册顺序。Partial split 仅源节点；中间扇出/扇入暂拒。

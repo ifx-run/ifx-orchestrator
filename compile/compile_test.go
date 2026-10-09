@@ -114,6 +114,83 @@ func TestPerHopMinOutIncludingZero(t *testing.T) {
 	}
 }
 
+func TestSourceSplitDiamondCompile(t *testing.T) {
+	frame := solana.MustPublicKeyFromBase58("Fr8dvcgrSYKjpvJd471hQD2QuEjF7656WiEuUSb54obu")
+	tape := 8192
+	s := scratch.ForPublicFrame(frame, constants.DefaultProgramID, &tape)
+	user := solana.NewWallet().PublicKey()
+	a, b, c, d := solana.NewWallet().PublicKey(), solana.NewWallet().PublicKey(), solana.NewWallet().PublicKey(), solana.NewWallet().PublicKey()
+	ataB, ataC, ataD := solana.NewWallet().PublicKey(), solana.NewWallet().PublicKey(), solana.NewWallet().PublicKey()
+	p := solana.NewWallet().PublicKey()
+	acc := []*solana.AccountMeta{{PublicKey: user, IsSigner: true, IsWritable: true}}
+	h0 := mock.New("s0", p, a, b, ataB, acc)
+	h1 := mock.New("s1", p, a, c, ataC, acc)
+	h2 := mock.New("t0", p, b, d, ataD, acc)
+	h3 := mock.New("t1", p, c, d, ataD, acc)
+	plan, err := orchestrator.New(s, user).
+		AmountIn(10_000).
+		FromGraph(
+			[]hop.RouteNode{{Mint: a}, {Mint: b, TokenAccount: ataB}, {Mint: c, TokenAccount: ataC}, {Mint: d, TokenAccount: ataD}},
+			[]hop.RouteEdge{
+				{From: 0, To: 1, Split: hop.MustPartial(3000), Hop: h0},
+				{From: 0, To: 2, Split: hop.MustPartial(7000), Hop: h1},
+				{From: 1, To: 3, Split: hop.Full(), Hop: h2},
+				{From: 2, To: 3, Split: hop.Full(), Hop: h3},
+			},
+		).
+		Build()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if countIfx(plan) == 0 {
+		t.Fatal("diamond should measure/forward with ifx")
+	}
+	var baked3000, baked7000 bool
+	for _, ix := range plan.Instructions {
+		if !ix.ProgramID().Equals(p) {
+			continue
+		}
+		data, err := ix.Data()
+		if err != nil || len(data) < 8 {
+			continue
+		}
+		switch binary.LittleEndian.Uint64(data[0:8]) {
+		case 3000:
+			baked3000 = true
+		case 7000:
+			baked7000 = true
+		}
+	}
+	if !baked3000 || !baked7000 {
+		t.Fatalf("source split bake 3000/7000: %v/%v", baked3000, baked7000)
+	}
+}
+
+func TestRejectMidGraphPartial(t *testing.T) {
+	frame := solana.MustPublicKeyFromBase58("Fr8dvcgrSYKjpvJd471hQD2QuEjF7656WiEuUSb54obu")
+	tape := 2048
+	s := scratch.ForPublicFrame(frame, constants.DefaultProgramID, &tape)
+	user := solana.NewWallet().PublicKey()
+	a, b, c, d := solana.NewWallet().PublicKey(), solana.NewWallet().PublicKey(), solana.NewWallet().PublicKey(), solana.NewWallet().PublicKey()
+	ataB, ataC, ataD := solana.NewWallet().PublicKey(), solana.NewWallet().PublicKey(), solana.NewWallet().PublicKey()
+	p := solana.NewWallet().PublicKey()
+	acc := []*solana.AccountMeta{{PublicKey: user, IsSigner: true}}
+	_, err := orchestrator.New(s, user).
+		AmountIn(10_000).
+		FromGraph(
+			[]hop.RouteNode{{Mint: a}, {Mint: b, TokenAccount: ataB}, {Mint: c, TokenAccount: ataC}, {Mint: d, TokenAccount: ataD}},
+			[]hop.RouteEdge{
+				{From: 0, To: 1, Split: hop.Full(), Hop: mock.New("a", p, a, b, ataB, acc)},
+				{From: 1, To: 2, Split: hop.MustPartial(3000), Hop: mock.New("b", p, b, c, ataC, acc)},
+				{From: 1, To: 3, Split: hop.MustPartial(7000), Hop: mock.New("c", p, b, d, ataD, acc)},
+			},
+		).
+		Build()
+	if err == nil {
+		t.Fatal("expected mid-graph Partial reject")
+	}
+}
+
 func TestMintMismatch(t *testing.T) {
 	frame := solana.MustPublicKeyFromBase58("Fr8dvcgrSYKjpvJd471hQD2QuEjF7656WiEuUSb54obu")
 	tape := 1024

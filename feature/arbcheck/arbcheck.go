@@ -35,6 +35,9 @@ type Feature struct {
 	wsolBefore  *typed.ScratchValue
 }
 
+// Phase baselines in Route and asserts in Settlement (before tips/fees in AfterRoute reverse order).
+func (f *Feature) Phase() feature.Phase { return feature.PhaseSettlement }
+
 // Token requires the ATA balance after the route to be at least before + minProfit.
 func Token(ata solana.PublicKey, minProfit uint64) *Feature {
 	return &Feature{TokenATA: ata, MinToken: minProfit}

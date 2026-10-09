@@ -76,6 +76,11 @@ type Feature struct {
 	ataCostReady bool
 }
 
+// Phase is Setup so WithATARent can baseline before Ata create.
+// Register before AtaPolicy within this phase (stable sort). AfterRoute reverse
+// then closes ATAs before sponsor repay when registered in that order.
+func (f *Feature) Phase() feature.Phase { return feature.PhaseSetup }
+
 // FromNative repays in SOL from user SOL/WSOL proceeds.
 // sponsor is used as both fee-payer identity and default RepayTo; call WithRepayTo when they differ.
 // protectionBps is the safety markup (10000 = 1.0×). Zero defaults to DefaultProtectionBps.

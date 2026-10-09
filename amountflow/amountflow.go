@@ -136,7 +136,11 @@ func (f *AmountFlow) StartStep(from, to hop.NodeID, bps hop.SplitBps) (*StepAmou
 		if in.outputCount == 1 {
 			amountIn = in.currentAmount // last remaining out-edge takes remainder
 		} else {
-			amountIn = in.totalAmount * uint64(bps.Bps()) / 10000
+			var err error
+			amountIn, err = MulBpsFloor(in.totalAmount, bps.Bps())
+			if err != nil {
+				return nil, err
+			}
 		}
 	}
 	if amountIn > in.currentAmount {

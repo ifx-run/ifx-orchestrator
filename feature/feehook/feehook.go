@@ -55,6 +55,9 @@ type Feature struct {
 	tokenCharged bool
 }
 
+// Phase settles fees after the route (with other Settlement features).
+func (f *Feature) Phase() feature.Phase { return feature.PhaseSettlement }
+
 // Fixed returns a FeeHook that transfers a constant lamports amount (AfterRoute).
 func Fixed(recipient solana.PublicKey, lamports uint64) *Feature {
 	return &Feature{Recipient: recipient, FixedLamports: lamports}

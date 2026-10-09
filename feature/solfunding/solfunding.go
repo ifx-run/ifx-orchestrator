@@ -79,6 +79,9 @@ func (f *Feature) ata(user solana.PublicKey) (solana.PublicKey, error) {
 	return AssociatedTokenAddress(user, WSOLMint, f.tokenProgram())
 }
 
+// Phase wraps before the route and unwraps in settlement/cleanup ordering.
+func (f *Feature) Phase() feature.Phase { return feature.PhaseSetup }
+
 func (f *Feature) BeforeRoute(cx *feature.Ctx) error {
 	if f.WrapLamports == 0 {
 		return nil

@@ -312,6 +312,13 @@ ifx-orchestrator/
 2. **连续的 `IfxLet` 必须合并成一条。** 通过 `feature.Ctx.Let()` 在构造时共用一个 `LetBuilder`；`Emit` 非 let 指令时自动 flush。禁止相邻两条只为两个常量各发一次 `Let`。
 3. **对外接口简洁、不易误用。** Builder / Feature / hop 的公开 API 保持短链、少样板；常量路径不强制 Frame（`New(nil, user)` 合法）；需要运行时绑定时再要求 scratch，错误信息要说清原因。不要把「let 一个常量再 patch」暴露成推荐写法。
 
+## 图 / Split / Feature 顺序（当前落地）
+
+- **`Route.Validate()`** 是 compile 入口；拓扑、mint 衔接、split 求和在此失败，而不是走到一半才炸。
+- **AmountFlow** 负责 compile-time readiness 与 **源节点（node 0）Partial split**（`MulBpsFloor` 防溢出）。各节点产出记在 `nodeIn[to]`，后续入边读 runtime forward；不把 `Complete(amountOut)` 当成链上结果。
+- **支持**：线性 Full；源节点 fan-out + 汇点 fan-in（菱形）。**尚未支持**（`Validate` 拒绝）：中间节点 Partial 扇出、中间节点 fan-in 后再出边。
+- **Feature `Phase`**：Funding → Setup → Route → Settlement；`Before*` 升序，`AfterRoute` 逆序。同相内保留注册顺序。不再依赖「必须先 Feature(FlashRent) 再 Ata」这种跨相口头约定。
+
 ## 风险与缓解
 
 - **图 vs 线性**：对外 path API 简单；内部 `AmountFlow` 从第一天按图写，避免二次重构

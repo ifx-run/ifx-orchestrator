@@ -34,6 +34,9 @@ type Ata struct {
 // WithAta returns an Ata Feature.
 func WithAta(p AtaPolicy) *Ata { return &Ata{Policy: p} }
 
+// Phase runs ATA create after funding borrow and close before funding repay.
+func (a *Ata) Phase() Phase { return PhaseSetup }
+
 func (a *Ata) BeforeRoute(cx *Ctx) error {
 	switch a.Policy {
 	case AtaUseOnly, AtaUseAndClose:

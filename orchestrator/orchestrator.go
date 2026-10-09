@@ -25,6 +25,7 @@ type Builder struct {
 	solIn            hop.SolForm
 	solOut           hop.SolForm
 	wsolAccount      solana.PublicKey
+	err              error
 }
 
 // New starts a builder. Scratch may be nil when the compiled plan will not use
@@ -46,9 +47,13 @@ func (b *Builder) MinAmountOut(v uint64) *Builder {
 	return b
 }
 
-// Feature appends a lifecycle Feature.
-// Register FlashRent before Ata so borrow runs first; AfterRoute is reversed so repay runs last.
+// Feature appends a lifecycle Feature. Cross-phase order is resolved by
+// feature.Phase (FlashRent → Ata → route → settlement); within a phase,
+// registration order is preserved.
 func (b *Builder) Feature(f feature.Feature) *Builder {
+	if b.err != nil {
+		return b
+	}
 	b.features = append(b.features, f)
 	return b
 }
@@ -101,6 +106,9 @@ func (b *Builder) HopWithMinOut(h hop.ExactInHop, minOut uint64) *Builder {
 }
 
 func (b *Builder) appendHop(h hop.ExactInHop) *Builder {
+	if b.err != nil {
+		return b
+	}
 	min, bare := hop.SplitMinOut(h)
 	in, out := bare.Input(), bare.Output()
 	if len(b.nodes) == 0 {
@@ -113,11 +121,7 @@ func (b *Builder) appendHop(h hop.ExactInHop) *Builder {
 	}
 	prev := b.nodes[len(b.nodes)-1]
 	if prev.Mint != in.Mint {
-		b.edges = append(b.edges, hop.RouteEdge{
-			From: hop.NodeID(len(b.nodes) - 1), To: hop.NodeID(len(b.nodes)),
-			Split: hop.Full(), Hop: mintMismatchHop{inner: bare, want: prev.Mint}, MinOut: min,
-		})
-		b.nodes = append(b.nodes, hop.NodeFromPort(out))
+		b.err = fmt.Errorf("hop: input mint %s != previous output %s", in.Mint, prev.Mint)
 		return b
 	}
 	from := hop.NodeID(len(b.nodes) - 1)
@@ -129,9 +133,13 @@ func (b *Builder) appendHop(h hop.ExactInHop) *Builder {
 	return b
 }
 
-// FromGraph sets an explicit graph (supports splits). Clears any prior Hop() path.
+// FromGraph sets an explicit graph. Clears any prior Hop() path.
+// Partial splits are only supported from the source node (see hop.Route.Validate).
 // Hops may be hop.WithMinOut(...); MinOut is peeled onto the edge (edge.MinOut wins if already set).
 func (b *Builder) FromGraph(nodes []hop.RouteNode, edges []hop.RouteEdge) *Builder {
+	if b.err != nil {
+		return b
+	}
 	b.nodes = append([]hop.RouteNode(nil), nodes...)
 	b.edges = make([]hop.RouteEdge, len(edges))
 	for i, e := range edges {
@@ -147,13 +155,11 @@ func (b *Builder) FromGraph(nodes []hop.RouteNode, edges []hop.RouteEdge) *Build
 
 // Build compiles the route into an instruction plan.
 func (b *Builder) Build() (*compile.Plan, error) {
+	if b.err != nil {
+		return nil, b.err
+	}
 	if b.amountIn == 0 {
 		return nil, fmt.Errorf("AmountIn is required")
-	}
-	for i, e := range b.edges {
-		if mm, ok := e.Hop.(mintMismatchHop); ok {
-			return nil, fmt.Errorf("hop[%d]: input mint %s != previous output %s", i, mm.inner.Input().Mint, mm.want)
-		}
 	}
 	return compile.Compile(compile.Params{
 		Scratch:          b.scratch,
@@ -171,16 +177,4 @@ func (b *Builder) Build() (*compile.Plan, error) {
 		},
 		Features: b.features,
 	})
-}
-
-type mintMismatchHop struct {
-	inner hop.ExactInHop
-	want  solana.PublicKey
-}
-
-func (m mintMismatchHop) VenueID() string  { return m.inner.VenueID() }
-func (m mintMismatchHop) Input() hop.Port  { return m.inner.Input() }
-func (m mintMismatchHop) Output() hop.Port { return m.inner.Output() }
-func (m mintMismatchHop) BuildBlueprint(cx *hop.HopBuildCtx) (hop.HopBlueprint, error) {
-	return m.inner.BuildBlueprint(cx)
 }

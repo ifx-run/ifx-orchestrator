@@ -85,8 +85,8 @@ func (j JupiterFlashFill) RepayIx(cx *feature.Ctx) (solana.Instruction, error) {
 
 // CustomRentLiquidity uses caller-supplied borrow/repay instructions.
 type CustomRentLiquidity struct {
-	Borrow   solana.Instruction
-	Repay    solana.Instruction
+	Borrow      solana.Instruction
+	Repay       solana.Instruction
 	MaxLamports uint64 // 0 => treat as enough for any peak
 }
 
@@ -103,7 +103,7 @@ func (c CustomRentLiquidity) RepayIx(*feature.Ctx) (solana.Instruction, error)  
 type Feature struct {
 	feature.Base
 	Backend RentLiquidityBackend
-	Always  bool // skip peak gating
+	Always  bool              // skip peak gating
 	Policy  feature.AtaPolicy // used to compute peak when Ctx.RentPeakReady is false
 	active  bool
 }
@@ -117,6 +117,9 @@ func Auto() *Feature {
 func AutoWith(b RentLiquidityBackend) *Feature {
 	return &Feature{Backend: b, Policy: feature.AtaCreateAndCloseCreated}
 }
+
+// Phase puts borrow before ATA setup and repay after cleanup (via reverse AfterRoute).
+func (f *Feature) Phase() feature.Phase { return feature.PhaseFunding }
 
 func (f *Feature) BeforeRoute(cx *feature.Ctx) error {
 	if f.Backend == nil {
