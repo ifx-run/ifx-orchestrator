@@ -292,7 +292,7 @@ Acceptance: adding a hop = implement `ExactInHop` + `.Hop(...)`; the Exact-style
 ### Phase 4 — SolFunding + mid-graph fee + repay modes ✅
 
 - `solfunding`: wrap + unwrap modes (`UnwrapLamports` Partial/All preferred over Close)
-- `feehook.AtNode` (Exact fee_node_index) with Fixed + TokenBps
+- `feehook.AtNode` (Exact fee_node_index): Fixed and TokenBps are separate Features; registration order controls charge order
 - `gassponsored`: `FromNative` (SOL/WSOL + protection bps) / `FromToken` (fixed amount)
 
 ## Design discipline

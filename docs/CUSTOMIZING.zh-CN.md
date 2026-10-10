@@ -114,8 +114,9 @@ gassponsored.FromToken(userATA, repayTokenATA, amountRaw).
 - **先注册 arbcheck**，AfterRoute 逆序才会在 tip/fee 之后做利润断言
 - `mevtip.New(receiver, lamports)` — `AfterRoute` 字面 System transfer
 - `mevtip.ShareNative(receiver, bps).WithMax(cap).WithWSOL(wsol)` — tip = floor(native 利润 × bps / 10000)；亏损则 tip 0（不 revert）。不超过当前 native lamports。硬地板用 `arbcheck`。
-- `feehook.Fixed` / `ProceedsBPS` — 路线结束时的 SOL 费
-- `feehook.AtNode(node, recipient).WithFixed(...).WithTokenBPS(...)` — Exact **fee_node_index**：该节点 in-edges 齐后扣一次（Fixed 在 AfterEdge；TokenBps 经 MapForwardAmount，下游 hop 看到净额）
+- `feehook.Fixed` / `ProceedsBPS` / `AtNode(...).WithFixed` / `AtNode(...).WithTokenBPS` — **一个 Feature 只收一种费**；固定+ bps 拆成两个 `.Feature(...)`。
+- AfterRoute 在 Settlement 相内 **逆序**：要先 Fixed 再 Proceeds ⇒ `Feature(ProceedsBPS(...)).Feature(Fixed(...))`。
+- 中扣 `AtNode` 按注册顺序（不逆序）：要先 Fixed 再 TokenBps ⇒ `Feature(AtNode.WithFixed).Feature(AtNode.WithTokenBPS)`。
 
 **自定义 fee program**（不用 System/Token transfer）：
 

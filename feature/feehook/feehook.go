@@ -11,17 +11,26 @@ import (
 	"github.com/ifx-run/ifx/go-sdk/typed"
 )
 
-// Feature takes a fixed lamports fee and/or bps of SOL/token proceeds.
+// Feature charges exactly one fee kind: FixedLamports, ProceedsBps, or TokenBps.
+//
+// Combine fixed + bps by registering two Features; charge order is then controlled
+// by registration order (see package comment on ordering below).
 //
 // Timing:
-//   - FeeNode unset: settle Fixed/ProceedsBps in AfterRoute.
-//   - FeeNode set (Exact fee_node_index): charge once after that node's in-edges settle.
-//     FixedLamports fires in AfterEdge; TokenBps deducts via MapForwardAmount on the
-//     completing inbound edge (so the next hop sees net), or via ATA delta if the fee
-//     node is terminal (no further chaining).
+//   - FeeNode unset: Fixed / ProceedsBps settle in AfterRoute.
+//   - FeeNode set (Exact fee_node_index): charge once when that node's in-edges complete.
+//     Fixed and TokenBps both participate in MapForwardAmount (chained) or AfterEdge
+//     (terminal), so registration order among mid-graph fee Features is honored.
+//
+// Ordering:
+//   - AfterRoute runs in reverse of Phase-sorted Features. Within Settlement, a Feature
+//     registered later runs earlier. Want Fixed then ProceedsBPS ⇒
+//     Feature(ProceedsBPS(...)).Feature(Fixed(...)).
+//   - Mid-graph (AtNode) fees run in MapForwardAmount / AfterEdge in Phase-sorted
+//     registration order (not reversed). Want Fixed then TokenBps ⇒
+//     Feature(AtNode(...).WithFixed(...)).Feature(AtNode(...).WithTokenBPS(...)).
 //
 // Settlement is pluggable via SolSettler / TokenSettler (default System/Token transfer).
-// Use CustomIx or SettlerFunc to call a proprietary fee program instead of transfer.
 type Feature struct {
 	feature.Base
 	Recipient solana.PublicKey
@@ -53,6 +62,7 @@ type Feature struct {
 	inRemaining  int
 	settled      bool
 	tokenCharged bool
+	fixedEmitted bool
 }
 
 // Phase settles fees after the route (with other Settlement features).
@@ -74,13 +84,13 @@ func AtNode(node hop.NodeID, recipient solana.PublicKey) *Feature {
 	return &Feature{Recipient: recipient, FeeNode: &n}
 }
 
-// WithFixed sets FixedLamports.
+// WithFixed sets FixedLamports on an AtNode Feature (Fixed-only; do not also set bps).
 func (f *Feature) WithFixed(lamports uint64) *Feature {
 	f.FixedLamports = lamports
 	return f
 }
 
-// WithTokenBPS sets TokenBps + recipient ATA for the default token settler.
+// WithTokenBPS sets TokenBps + recipient ATA on an AtNode Feature (TokenBps-only).
 func (f *Feature) WithTokenBPS(bps uint16, recipientATA solana.PublicKey) *Feature {
 	f.TokenBps = bps
 	f.RecipientATA = recipientATA
@@ -135,8 +145,27 @@ func (f *Feature) tokenSettler(cx *feature.Ctx) (Settler, error) {
 }
 
 func (f *Feature) BeforeRoute(cx *feature.Ctx) error {
-	if f.FixedLamports == 0 && f.ProceedsBps == 0 && f.TokenBps == 0 {
+	kinds := 0
+	if f.FixedLamports > 0 {
+		kinds++
+	}
+	if f.ProceedsBps > 0 {
+		kinds++
+	}
+	if f.TokenBps > 0 {
+		kinds++
+	}
+	if kinds == 0 {
 		return fmt.Errorf("feehook: FixedLamports, ProceedsBps, or TokenBps is required")
+	}
+	if kinds > 1 {
+		return fmt.Errorf("feehook: one Feature charges one fee kind; register separate Features to combine Fixed and bps (order = registration / AfterRoute reverse)")
+	}
+	if f.ProceedsBps > 0 && f.FeeNode != nil {
+		return fmt.Errorf("feehook: ProceedsBps is AfterRoute-only; omit FeeNode")
+	}
+	if f.TokenBps > 0 && f.FeeNode == nil {
+		return fmt.Errorf("feehook: TokenBps requires AtNode (FeeNode)")
 	}
 	if f.SolSettler == nil && f.Recipient.IsZero() && (f.FixedLamports > 0 || f.ProceedsBps > 0) {
 		return fmt.Errorf("feehook: Recipient or SolSettler is required for SOL fees")
@@ -146,6 +175,7 @@ func (f *Feature) BeforeRoute(cx *feature.Ctx) error {
 	}
 	f.settled = false
 	f.tokenCharged = false
+	f.fixedEmitted = false
 	f.inRemaining = 0
 	f.tokenBefore = nil
 	if f.FeeNode != nil {
@@ -215,10 +245,13 @@ func (f *Feature) AfterEdge(cx *feature.Ctx, edgeIndex int) error {
 	if f.inRemaining > 0 {
 		return nil
 	}
-	if f.FixedLamports > 0 {
+	// Terminal FeeNode (no further hop): settle here in Feature registration order.
+	// Chained Fixed/TokenBps already ran in MapForwardAmount.
+	if f.FixedLamports > 0 && !f.fixedEmitted {
 		if err := f.solSettler().EmitFixed(cx, f.FixedLamports); err != nil {
 			return err
 		}
+		f.fixedEmitted = true
 	}
 	if f.TokenBps > 0 && !f.tokenCharged {
 		if err := f.chargeTokenFromDelta(cx); err != nil {
@@ -229,18 +262,29 @@ func (f *Feature) AfterEdge(cx *feature.Ctx, edgeIndex int) error {
 	return nil
 }
 
-func (f *Feature) MapForwardAmount(cx *feature.Ctx, amount feature.ForwardAmount) (feature.ForwardAmount, error) {
-	if f.TokenBps == 0 || f.tokenCharged || f.FeeNode == nil {
-		return amount, nil
-	}
-	if cx.EdgeIndex < 0 || cx.EdgeIndex >= len(cx.Route.Edges) {
-		return amount, nil
+func (f *Feature) feeNodeReady(cx *feature.Ctx) bool {
+	if f.FeeNode == nil || cx.EdgeIndex < 0 || cx.EdgeIndex >= len(cx.Route.Edges) {
+		return false
 	}
 	edge := cx.Route.Edges[cx.EdgeIndex]
 	if edge.To != *f.FeeNode {
+		return false
+	}
+	return f.inRemaining == 1
+}
+
+func (f *Feature) MapForwardAmount(cx *feature.Ctx, amount feature.ForwardAmount) (feature.ForwardAmount, error) {
+	if !f.feeNodeReady(cx) {
 		return amount, nil
 	}
-	if f.inRemaining != 1 {
+	// Mid-graph chained path: honor Feature registration order among fee hooks.
+	if f.FixedLamports > 0 && !f.fixedEmitted {
+		if err := f.solSettler().EmitFixed(cx, f.FixedLamports); err != nil {
+			return amount, err
+		}
+		f.fixedEmitted = true
+	}
+	if f.TokenBps == 0 || f.tokenCharged {
 		return amount, nil
 	}
 

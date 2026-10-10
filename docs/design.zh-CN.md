@@ -292,7 +292,7 @@ ifx-orchestrator/
 ### Phase 4 — SolFunding + 图中 fee + repay modes ✅
 
 - `solfunding`：wrap + unwrap（优先 `UnwrapLamports` Partial/All，而非默认 Close）
-- `feehook.AtNode`（Exact fee_node_index）支持 Fixed + TokenBps
+- `feehook.AtNode`（Exact fee_node_index）：Fixed 与 TokenBps 各用一个 Feature，注册顺序控制先后
 - `gassponsored`：`FromNative`（SOL/WSOL + 保护 bps）/ `FromToken`（构造时定值）
 
 ## 设计纪律

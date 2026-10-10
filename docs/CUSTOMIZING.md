@@ -114,8 +114,9 @@ Atomic cycle (e.g. two Jupiter legs A→B→A): you still need a **real** off-ch
 - Register **arbcheck first** so AfterRoute (reversed) asserts after tips/fees
 - `mevtip.New(receiver, lamports)` — literal System transfer in `AfterRoute`
 - `mevtip.ShareNative(receiver, bps).WithMax(cap).WithWSOL(wsol)` — tip floor(native profit × bps / 10000); loss ⇒ 0 tip (does not revert). Caps at current native lamports. Use `arbcheck` for a hard floor.
-- `feehook.Fixed` / `ProceedsBPS` — end-of-route SOL fee
-- `feehook.AtNode(node, recipient).WithFixed(...).WithTokenBPS(bps, recipientATA)` — Exact **fee_node_index**: charge once after that node's in-edges settle (Fixed in AfterEdge; TokenBps via MapForwardAmount so the next hop sees net)
+- `feehook.Fixed` / `ProceedsBPS` / `AtNode(...).WithFixed` / `AtNode(...).WithTokenBPS` — **one fee kind per Feature**. Combine with two `.Feature(...)` calls.
+- AfterRoute order is **reversed** within Settlement: want Fixed then Proceeds ⇒ `Feature(ProceedsBPS(...)).Feature(Fixed(...))`.
+- Mid-graph `AtNode` order follows registration (not reversed): want Fixed then TokenBps ⇒ `Feature(AtNode.WithFixed).Feature(AtNode.WithTokenBPS)`.
 
 **Custom fee program** (instead of System/Token transfer):
 

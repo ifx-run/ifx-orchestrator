@@ -280,13 +280,11 @@ func Compile(p Params) (*Plan, error) {
 				if err != nil {
 					return nil, err
 				}
-				cx.Emit(geOut)
-			} else if needAdapt {
-				if err := cx.FlushLet(); err != nil {
-					return nil, err
-				}
+				cx.Emit(geOut) // flushes open Let before assert
 			}
 			if needChain {
+				// Keep the post-measure Let open so MapForwardAmount can merge into it
+				// (unless adaptForward Emits wrap/unwrap ixs, which flush first).
 				fwd, err := adaptForward(cx, outPort, nextIn, delta, p.wsolTokenProgram())
 				if err != nil {
 					return nil, fmt.Errorf("adapt[%d]: %w", i, err)

@@ -113,6 +113,109 @@ func TestSingleHopTokenBpsUsesIfx(t *testing.T) {
 	}
 }
 
+func TestRejectFixedAndBpsSameFeature(t *testing.T) {
+	frame := solana.MustPublicKeyFromBase58("Fr8dvcgrSYKjpvJd471hQD2QuEjF7656WiEuUSb54obu")
+	tape := 1024
+	s := scratch.ForPublicFrame(frame, constants.DefaultProgramID, &tape)
+	user := solana.NewWallet().PublicKey()
+	treasury := solana.NewWallet().PublicKey()
+	_, err := orchestrator.New(s, user).
+		AmountIn(1000).
+		Feature(feehook.ProceedsBPS(treasury, 30).WithFixed(1_000)).
+		Hop(mockHop(t, user)).
+		Build()
+	if err == nil {
+		t.Fatal("expected reject combining Fixed and ProceedsBps on one Feature")
+	}
+}
+
+func TestAfterRouteOrderFixedThenProceeds(t *testing.T) {
+	// AfterRoute is reversed within Settlement ⇒ register Proceeds then Fixed
+	// so Fixed System transfer runs before Proceeds patched transfer.
+	frame := solana.MustPublicKeyFromBase58("Fr8dvcgrSYKjpvJd471hQD2QuEjF7656WiEuUSb54obu")
+	tape := 4096
+	s := scratch.ForPublicFrame(frame, constants.DefaultProgramID, &tape)
+	user := solana.NewWallet().PublicKey()
+	treasury := solana.NewWallet().PublicKey()
+	plan, err := orchestrator.New(s, user).
+		AmountIn(1000).
+		Feature(feehook.ProceedsBPS(treasury, 30)).
+		Feature(feehook.Fixed(treasury, 7_000)).
+		Hop(mockHop(t, user)).
+		Build()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fixedIdx, bpsIdx = -1, -1
+	for i, ix := range plan.Instructions {
+		if ix.ProgramID().Equals(solana.SystemProgramID) {
+			data, _ := ix.Data()
+			if len(data) >= 12 && binary.LittleEndian.Uint64(data[4:12]) == 7_000 {
+				fixedIdx = i
+			}
+		}
+		if ix.ProgramID().Equals(constants.DefaultProgramID) {
+			data, _ := ix.Data()
+			if len(data) > 0 && data[0] == constants.IxDiscPatchedCpi {
+				bpsIdx = i
+			}
+		}
+	}
+	if fixedIdx < 0 || bpsIdx < 0 {
+		t.Fatalf("fixed=%d bpsCpi=%d", fixedIdx, bpsIdx)
+	}
+	if fixedIdx > bpsIdx {
+		t.Fatalf("want Fixed before Proceeds CPI, fixed=%d bps=%d", fixedIdx, bpsIdx)
+	}
+}
+
+func TestMidGraphOrderFixedThenTokenBps(t *testing.T) {
+	frame := solana.MustPublicKeyFromBase58("Fr8dvcgrSYKjpvJd471hQD2QuEjF7656WiEuUSb54obu")
+	tape := 8192
+	s := scratch.ForPublicFrame(frame, constants.DefaultProgramID, &tape)
+	user := solana.NewWallet().PublicKey()
+	treasury := solana.NewWallet().PublicKey()
+	feeATA := solana.NewWallet().PublicKey()
+	a, b, c := solana.NewWallet().PublicKey(), solana.NewWallet().PublicKey(), solana.NewWallet().PublicKey()
+	ataB, ataC := solana.NewWallet().PublicKey(), solana.NewWallet().PublicKey()
+	p := solana.NewWallet().PublicKey()
+	acc := []*solana.AccountMeta{{PublicKey: user, IsSigner: true, IsWritable: true}}
+	plan, err := orchestrator.New(s, user).
+		AmountIn(1_000_000).
+		Feature(feehook.AtNode(1, treasury).WithFixed(9_999)).
+		Feature(feehook.AtNode(1, treasury).WithTokenBPS(50, feeATA)).
+		Hop(mock.New("ab", p, a, b, ataB, acc)).
+		Hop(mock.New("bc", p, b, c, ataC, acc)).
+		Build()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fixedIdx, tokenFeeIdx = -1, -1
+	for i, ix := range plan.Instructions {
+		if ix.ProgramID().Equals(solana.SystemProgramID) {
+			data, _ := ix.Data()
+			if len(data) >= 12 && binary.LittleEndian.Uint64(data[4:12]) == 9_999 {
+				fixedIdx = i
+			}
+		}
+		if ix.ProgramID().Equals(constants.DefaultProgramID) {
+			data, _ := ix.Data()
+			if len(data) > 0 && data[0] == constants.IxDiscPatchedCpi {
+				// first patched CPI after hop0 is token fee; hop1 venue is second
+				if tokenFeeIdx < 0 {
+					tokenFeeIdx = i
+				}
+			}
+		}
+	}
+	if fixedIdx < 0 || tokenFeeIdx < 0 {
+		t.Fatalf("fixed=%d tokenFee=%d", fixedIdx, tokenFeeIdx)
+	}
+	if fixedIdx > tokenFeeIdx {
+		t.Fatalf("want Fixed before TokenBps CPI, fixed=%d token=%d", fixedIdx, tokenFeeIdx)
+	}
+}
+
 func hasIfx(ixs []solana.Instruction) bool {
 	for _, ix := range ixs {
 		if ix.ProgramID().Equals(constants.DefaultProgramID) {
