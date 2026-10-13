@@ -239,14 +239,25 @@ func TestNativeThenWSOLChain(t *testing.T) {
 	user := solana.NewWallet().PublicKey()
 	meme := solana.NewWallet().PublicKey()
 	usdc := solana.NewWallet().PublicKey()
-	wsolATA := solana.NewWallet().PublicKey()
-	usdcATA := solana.NewWallet().PublicKey()
+	wsolATA, _, err := solana.FindAssociatedTokenAddress(user, hop.WrappedSOLMint)
+	if err != nil {
+		t.Fatal(err)
+	}
+	usdcATA, _, err := solana.FindAssociatedTokenAddress(user, usdc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	memeATA, _, err := solana.FindAssociatedTokenAddress(user, meme)
+	if err != nil {
+		t.Fatal(err)
+	}
 	p := solana.NewWallet().PublicKey()
 	acc := []*solana.AccountMeta{{PublicKey: user, IsSigner: true, IsWritable: true}}
 
 	plan, err := orchestrator.New(s, user).
 		AmountIn(1_000).
-		Hop(mock.New("sell", p, meme, hop.WrappedSOLMint, solana.PublicKey{}, acc).WithInput(solana.NewWallet().PublicKey()).WithNativeOut()).
+		AtaPolicy(feature.AtaCreateOnly).
+		Hop(mock.New("sell", p, meme, hop.WrappedSOLMint, solana.PublicKey{}, acc).WithInput(memeATA).WithNativeOut()).
 		Hop(mock.New("ray", p, hop.WrappedSOLMint, usdc, usdcATA, acc).WithInput(wsolATA)).
 		Build()
 	if err != nil {
@@ -318,17 +329,63 @@ func TestSolInNativeWrapsWSOL(t *testing.T) {
 	user := solana.NewWallet().PublicKey()
 	p := solana.NewWallet().PublicKey()
 	acc := []*solana.AccountMeta{{PublicKey: user, IsSigner: true, IsWritable: true}}
-	wsolATA := solana.NewWallet().PublicKey()
+	outMint := solana.NewWallet().PublicKey()
+	wsolATA, _, err := solana.FindAssociatedTokenAddress(user, hop.WrappedSOLMint)
+	if err != nil {
+		t.Fatal(err)
+	}
+	outATA, _, err := solana.FindAssociatedTokenAddress(user, outMint)
+	if err != nil {
+		t.Fatal(err)
+	}
 	plan, err := orchestrator.New(s, user).
 		AmountIn(100).
+		AtaPolicy(feature.AtaCreateOnly).
 		SolIn(hop.SolNative).
-		Hop(mock.New("ray", p, hop.WrappedSOLMint, solana.NewWallet().PublicKey(), solana.NewWallet().PublicKey(), acc).WithInput(wsolATA)).
+		Hop(mock.New("ray", p, hop.WrappedSOLMint, outMint, outATA, acc).WithInput(wsolATA)).
 		Build()
 	if err != nil {
 		t.Fatal(err)
 	}
 	if n := countIfx(plan); n != 0 {
 		t.Fatalf("SolIn wrap of compile-time amount must not use ifx, got %d ifx ixs", n)
+	}
+	var ataCreates, wsolCreates int
+	for _, ix := range plan.Instructions {
+		if !ix.ProgramID().Equals(solana.SPLAssociatedTokenAccountProgramID) {
+			continue
+		}
+		ataCreates++
+		if ix.Accounts()[3].PublicKey.Equals(hop.WrappedSOLMint) {
+			wsolCreates++
+		}
+	}
+	if ataCreates != 2 {
+		t.Fatalf("want 2 CreateATA (WSOL+out), got %d", ataCreates)
+	}
+	if wsolCreates != 1 {
+		t.Fatalf("WSOL CreateATA must not be duplicated by SolIn wrap, got %d", wsolCreates)
+	}
+}
+
+func TestSolInNativeRequiresAtaOrExists(t *testing.T) {
+	frame := solana.MustPublicKeyFromBase58("Fr8dvcgrSYKjpvJd471hQD2QuEjF7656WiEuUSb54obu")
+	tape := 2048
+	s := scratch.ForPublicFrame(frame, constants.DefaultProgramID, &tape)
+	user := solana.NewWallet().PublicKey()
+	p := solana.NewWallet().PublicKey()
+	acc := []*solana.AccountMeta{{PublicKey: user, IsSigner: true, IsWritable: true}}
+	wsolATA, _, err := solana.FindAssociatedTokenAddress(user, hop.WrappedSOLMint)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = orchestrator.New(s, user).
+		AmountIn(100).
+		SolIn(hop.SolNative).
+		Hop(mock.New("ray", p, hop.WrappedSOLMint, solana.NewWallet().PublicKey(), solana.NewWallet().PublicKey(), acc).WithInput(wsolATA)).
+		Build()
+	if err == nil {
+		t.Fatal("expected SolIn wrap without AtaCreate*/Exists to fail")
 	}
 }
 

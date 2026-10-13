@@ -39,6 +39,10 @@ type Ctx struct {
 	HopConserve          bool
 	HopConserveSkipInput bool
 
+	// AtaCreatesMissing is set by compile when an Ata Feature will emit
+	// CreateIdempotent for route nodes with Exists=false.
+	AtaCreatesMissing bool
+
 	letOpen *scratch.LetBuilder
 	emitErr error
 }

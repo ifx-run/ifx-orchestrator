@@ -41,9 +41,13 @@ type Feature struct {
 
 	// FixedLamports is transferred literally when > 0.
 	FixedLamports uint64
-	// ProceedsBps takes floor(bps * (user_lamports_after - baseline) / 10000) when > 0.
+	// ProceedsBps takes floor(bps * saturating_profit / 10000) when > 0.
+	// Profit = native Δ (optionally + WSOL Δ via WithWSOL). Loss ⇒ fee 0 (no revert).
+	// Fee is capped at current native lamports (System transfer cannot spend WSOL).
 	// Only applied at AfterRoute (needs full-route SOL delta).
 	ProceedsBps uint16
+	// WSOLATA, when set, includes that ATA's amount Δ in ProceedsBps profit (same units as lamports).
+	WSOLATA solana.PublicKey
 	// TokenBps takes floor(bps * amount / 10000).
 	TokenBps uint16
 	// RecipientATA is used by the default TokenTransferSettler (required when TokenBps > 0
@@ -58,6 +62,7 @@ type Feature struct {
 	TokenSettler Settler
 
 	userBefore   *typed.ScratchValue
+	wsolBefore   *typed.ScratchValue
 	tokenBefore  *typed.ScratchValue
 	inRemaining  int
 	settled      bool
@@ -73,7 +78,8 @@ func Fixed(recipient solana.PublicKey, lamports uint64) *Feature {
 	return &Feature{Recipient: recipient, FixedLamports: lamports}
 }
 
-// ProceedsBPS returns a FeeHook that takes bps of user SOL delta after the route.
+// ProceedsBPS returns a FeeHook that takes bps of native (optional WSOL) profit after the route.
+// Loss ⇒ 0 fee (SaturatingSub); use WithWSOL when the route wraps/unwraps SOL.
 func ProceedsBPS(recipient solana.PublicKey, bps uint16) *Feature {
 	return &Feature{Recipient: recipient, ProceedsBps: bps}
 }
@@ -87,6 +93,12 @@ func AtNode(node hop.NodeID, recipient solana.PublicKey) *Feature {
 // WithFixed sets FixedLamports on an AtNode Feature (Fixed-only; do not also set bps).
 func (f *Feature) WithFixed(lamports uint64) *Feature {
 	f.FixedLamports = lamports
+	return f
+}
+
+// WithWSOL includes WSOL ATA delta in ProceedsBps profit (same units as lamports).
+func (f *Feature) WithWSOL(wsolATA solana.PublicKey) *Feature {
+	f.WSOLATA = wsolATA
 	return f
 }
 
@@ -164,6 +176,12 @@ func (f *Feature) BeforeRoute(cx *feature.Ctx) error {
 	if f.ProceedsBps > 0 && f.FeeNode != nil {
 		return fmt.Errorf("feehook: ProceedsBps is AfterRoute-only; omit FeeNode")
 	}
+	if f.ProceedsBps > 10_000 {
+		return fmt.Errorf("feehook: ProceedsBps must be 1..10000")
+	}
+	if !f.WSOLATA.IsZero() && f.ProceedsBps == 0 {
+		return fmt.Errorf("feehook: WithWSOL requires ProceedsBps")
+	}
 	if f.TokenBps > 0 && f.FeeNode == nil {
 		return fmt.Errorf("feehook: TokenBps requires AtNode (FeeNode)")
 	}
@@ -177,6 +195,8 @@ func (f *Feature) BeforeRoute(cx *feature.Ctx) error {
 	f.tokenCharged = false
 	f.fixedEmitted = false
 	f.inRemaining = 0
+	f.userBefore = nil
+	f.wsolBefore = nil
 	f.tokenBefore = nil
 	if f.FeeNode != nil {
 		n := int(*f.FeeNode)
@@ -207,6 +227,13 @@ func (f *Feature) BeforeRoute(cx *feature.Ctx) error {
 			return err
 		}
 		f.userBefore = &before
+		if !f.WSOLATA.IsZero() {
+			w, err := lb.SplTokenAmount(f.WSOLATA)
+			if err != nil {
+				return err
+			}
+			f.wsolBefore = &w
+		}
 	}
 	if f.TokenBps > 0 && f.FeeNode != nil && f.TokenSettler == nil {
 		// Baseline only needed for default terminal TokenBps delta path.
@@ -388,9 +415,26 @@ func (f *Feature) AfterRoute(cx *feature.Ctx) error {
 	if err != nil {
 		return err
 	}
-	proceeds, err := post.LetEval(expr.Sub(
-		expr.Ref(userAfter.Index),
-		expr.Ref(f.userBefore.Index),
+	end := userAfter
+	start := *f.userBefore
+	if f.wsolBefore != nil {
+		wAfter, err := post.SplTokenAmount(f.WSOLATA)
+		if err != nil {
+			return err
+		}
+		end, err = post.LetEval(expr.Add(expr.Ref(userAfter.Index), expr.Ref(wAfter.Index)))
+		if err != nil {
+			return err
+		}
+		start, err = post.LetEval(expr.Add(expr.Ref(f.userBefore.Index), expr.Ref(f.wsolBefore.Index)))
+		if err != nil {
+			return err
+		}
+	}
+	// Saturating: wrap / spend without native profit ⇒ fee 0 (no IntegerUnderflow revert).
+	proceeds, err := post.LetEval(expr.SaturatingSub(
+		expr.Ref(end.Index),
+		expr.Ref(start.Index),
 	))
 	if err != nil {
 		return err
@@ -403,6 +447,11 @@ func (f *Feature) AfterRoute(cx *feature.Ctx) error {
 		expr.Ref(proceeds.Index),
 		expr.Ref(bpsConst.Index),
 	))
+	if err != nil {
+		return err
+	}
+	// System transfer can only spend native lamports, not WSOL.
+	fee, err = post.LetEval(expr.Min(expr.Ref(fee.Index), expr.Ref(userAfter.Index)))
 	if err != nil {
 		return err
 	}

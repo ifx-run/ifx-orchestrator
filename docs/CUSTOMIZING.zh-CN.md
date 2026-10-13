@@ -61,7 +61,9 @@ mint 都是 Wrapped SOL 时，compile 在 hop 之间换形：
 
 `.SolIn(hop.SolNative)`：第一跳要 WSOL 且不是 native 时，把 `AmountIn` wrap 进该 hop 的 WSOL ATA。`.SolOut(hop.SolWSOL)`：把最后一跳的 native 增量 wrap（`.WSOLAccount` 或派生 ATA）。默认 `SolAsEmitted` 保持 venue CPI 的形态。
 
-`solfunding.Wrap` 仍是 **固定 lamports** 的 BeforeRoute prelude；跳间换形归 compile。
+**ATA create 不属于 SolIn。** wrap 只做 transfer + `SyncNative`。route 上的 WSOL ATA 用 `AtaPolicy(Create*)` 或 `RouteNode.Exists=true`。（`SolOut` 目标若不在 route node 上，仍会发一次 `CreateIdempotent`。）
+
+`solfunding.Wrap` 仍是 **固定 lamports** 的 BeforeRoute prelude（自带 create / `SkipCreateATA`）；跳间换形归 compile。
 
 ### SolFunding（WSOL wrap / unwrap）
 
@@ -114,7 +116,8 @@ gassponsored.FromToken(userATA, repayTokenATA, amountRaw).
 - **先注册 arbcheck**，AfterRoute 逆序才会在 tip/fee 之后做利润断言
 - `mevtip.New(receiver, lamports)` — `AfterRoute` 字面 System transfer
 - `mevtip.ShareNative(receiver, bps).WithMax(cap).WithWSOL(wsol)` — tip = floor(native 利润 × bps / 10000)；亏损则 tip 0（不 revert）。不超过当前 native lamports。硬地板用 `arbcheck`。
-- `feehook.Fixed` / `ProceedsBPS` / `AtNode(...).WithFixed` / `AtNode(...).WithTokenBPS` — **一个 Feature 只收一种费**；固定+ bps 拆成两个 `.Feature(...)`。
+- `feehook.Fixed` / `ProceedsBPS(receiver, bps).WithWSOL(wsol)` / `AtNode(...).WithFixed` / `AtNode(...).WithTokenBPS` — **一个 Feature 只收一种费**；固定+ bps 拆成两个 `.Feature(...)`。
+- `ProceedsBPS` = floor(bps × 饱和 native(+WSOL) 利润 / 10000)；亏损则 fee 0（不 revert）。不超过当前 native lamports。wrap/unwrap 路径用 `.WithWSOL`（与 `mevtip.ShareNative` 同思路）。
 - AfterRoute 在 Settlement 相内 **逆序**：要先 Fixed 再 Proceeds ⇒ `Feature(ProceedsBPS(...)).Feature(Fixed(...))`。
 - 中扣 `AtNode` 按注册顺序（不逆序）：要先 Fixed 再 TokenBps ⇒ `Feature(AtNode.WithFixed).Feature(AtNode.WithTokenBPS)`。
 

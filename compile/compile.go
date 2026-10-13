@@ -64,15 +64,16 @@ func Compile(p Params) (*Plan, error) {
 
 	ixs := []solana.Instruction{}
 	cx := &feature.Ctx{
-		Scratch:          p.Scratch,
-		User:             p.User,
-		Ixs:              &ixs,
-		AmountIn:         p.AmountIn,
-		MinAmountOut:     p.MinAmountOut,
-		Route:            p.Route,
-		UserLamports:     p.UserLamports,
-		TokenAccountRent: p.TokenAccountRent,
-		EdgeIndex:        -1,
+		Scratch:           p.Scratch,
+		User:              p.User,
+		Ixs:               &ixs,
+		AmountIn:          p.AmountIn,
+		MinAmountOut:      p.MinAmountOut,
+		Route:             p.Route,
+		UserLamports:      p.UserLamports,
+		TokenAccountRent:  p.TokenAccountRent,
+		EdgeIndex:         -1,
+		AtaCreatesMissing: featuresAtaCreatesMissing(features),
 	}
 
 	for _, f := range features {
@@ -185,6 +186,9 @@ func Compile(p Params) (*Plan, error) {
 				if !inPort.Native {
 					if !inPort.Mint.Equals(hop.WrappedSOLMint) || inPort.Account.IsZero() {
 						return nil, fmt.Errorf("SolIn(Native) requires a native SOL or WSOL first hop")
+					}
+					if err := ensureWSOLATAForWrap(cx, inPort.Account, p.wsolTokenProgram()); err != nil {
+						return nil, fmt.Errorf("sol_in wrap: %w", err)
 					}
 					if err := wrapLamportsToWSOL(cx, inPort.Account, p.wsolTokenProgram(), p.AmountIn, nil); err != nil {
 						return nil, fmt.Errorf("sol_in wrap: %w", err)
@@ -303,6 +307,9 @@ func Compile(p Params) (*Plan, error) {
 				dest, err := resolveWSOLATA(p, p.User)
 				if err != nil {
 					return nil, err
+				}
+				if err := ensureWSOLATAForWrap(cx, dest, p.wsolTokenProgram()); err != nil {
+					return nil, fmt.Errorf("sol_out wrap: %w", err)
 				}
 				if err := wrapLamportsToWSOL(cx, dest, p.wsolTokenProgram(), 0, &delta); err != nil {
 					return nil, fmt.Errorf("sol_out wrap: %w", err)

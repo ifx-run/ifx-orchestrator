@@ -28,12 +28,10 @@ func measurePort(lb *scratch.LetBuilder, user solana.PublicKey, port hop.Port) (
 	return lb.SplTokenAmount(port.Account)
 }
 
+// wrapLamportsToWSOL funds dest with lit or *slot then SyncNative.
+// It does not create the ATA — that is Ata Feature's job (or Exists=true).
+// Call ensureWSOLATAForWrap first.
 func wrapLamportsToWSOL(cx *feature.Ctx, dest, tokenProgram solana.PublicKey, lit uint64, slot *typed.ScratchValue) error {
-	create, err := solfunding.CreateATAIdempotent(cx.User, cx.User, hop.WrappedSOLMint, tokenProgram)
-	if err != nil {
-		return err
-	}
-	cx.Emit(create)
 	if slot != nil {
 		if err := feature.EmitPatchedSystemTransfer(cx, cx.User, dest, *slot); err != nil {
 			return err
@@ -43,6 +41,49 @@ func wrapLamportsToWSOL(cx *feature.Ctx, dest, tokenProgram solana.PublicKey, li
 	}
 	cx.Emit(solfunding.SyncNativeInstruction(dest, tokenProgram))
 	return cx.Err()
+}
+
+// ensureWSOLATAForWrap makes sure dest can receive wrap funds without duplicate creates.
+//
+//   - Route node + (Exists | AtaCreatesMissing) → no create (Ata / chain already covers it)
+//   - Route node otherwise → error (caller must set AtaPolicy(Create*) or Exists)
+//   - Not a route node (e.g. SolOut-only WSOLAccount) → emit CreateIdempotent once
+func ensureWSOLATAForWrap(cx *feature.Ctx, dest, tokenProgram solana.PublicKey) error {
+	if node, ok := routeNodeByATA(cx.Route, dest); ok {
+		if node.Exists || cx.AtaCreatesMissing {
+			return nil
+		}
+		return fmt.Errorf("funding WSOL ATA %s requires AtaPolicy(Create*) or RouteNode.Exists=true (SolIn/adapt wrap does not create ATA)", dest)
+	}
+	create, err := solfunding.CreateATAIdempotent(cx.User, cx.User, hop.WrappedSOLMint, tokenProgram)
+	if err != nil {
+		return err
+	}
+	cx.Emit(create)
+	return cx.Err()
+}
+
+func routeNodeByATA(route hop.Route, ata solana.PublicKey) (hop.RouteNode, bool) {
+	for _, n := range route.Nodes {
+		if !n.TokenAccount.IsZero() && n.TokenAccount.Equals(ata) {
+			return n, true
+		}
+	}
+	return hop.RouteNode{}, false
+}
+
+func featuresAtaCreatesMissing(features []feature.Feature) bool {
+	for _, f := range features {
+		a, ok := f.(*feature.Ata)
+		if !ok {
+			continue
+		}
+		switch a.Policy {
+		case feature.AtaCreateOnly, feature.AtaCreateAndCloseCreated, feature.AtaCreateAndCloseAll:
+			return true
+		}
+	}
+	return false
 }
 
 func unwrapWSOLToNative(cx *feature.Ctx, amount typed.ScratchValue, source, tokenProgram solana.PublicKey) error {
@@ -67,6 +108,9 @@ func adaptForward(cx *feature.Ctx, from, to hop.Port, delta typed.ScratchValue, 
 	case from.Native && !to.Native:
 		if to.Account.IsZero() || !to.Mint.Equals(hop.WrappedSOLMint) {
 			return typed.ScratchValue{}, fmt.Errorf("native SOL can only wrap into a WSOL ATA")
+		}
+		if err := ensureWSOLATAForWrap(cx, to.Account, tokenProgram); err != nil {
+			return typed.ScratchValue{}, err
 		}
 		if err := wrapLamportsToWSOL(cx, to.Account, tokenProgram, 0, &delta); err != nil {
 			return typed.ScratchValue{}, err

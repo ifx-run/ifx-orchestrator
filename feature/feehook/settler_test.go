@@ -93,6 +93,26 @@ func TestSingleHopProceedsBpsNeedsScratch(t *testing.T) {
 	}
 }
 
+func TestProceedsBpsWithWSOLBuilds(t *testing.T) {
+	frame := solana.MustPublicKeyFromBase58("Fr8dvcgrSYKjpvJd471hQD2QuEjF7656WiEuUSb54obu")
+	tape := 4096
+	s := scratch.ForPublicFrame(frame, constants.DefaultProgramID, &tape)
+	user := solana.NewWallet().PublicKey()
+	treasury := solana.NewWallet().PublicKey()
+	wsolATA := solana.NewWallet().PublicKey()
+	plan, err := orchestrator.New(s, user).
+		AmountIn(1000).
+		Feature(feehook.ProceedsBPS(treasury, 30).WithWSOL(wsolATA)).
+		Hop(mockHop(t, user)).
+		Build()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !hasIfx(plan.Instructions) {
+		t.Fatal("Proceeds+WSOL must emit ifx")
+	}
+}
+
 func TestSingleHopTokenBpsUsesIfx(t *testing.T) {
 	frame := solana.MustPublicKeyFromBase58("Fr8dvcgrSYKjpvJd471hQD2QuEjF7656WiEuUSb54obu")
 	tape := 2048

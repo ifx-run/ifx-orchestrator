@@ -61,7 +61,9 @@ Compile adapts lanes between hops when both sides use the Wrapped SOL mint:
 
 `.SolIn(hop.SolNative)` wraps `AmountIn` into the first hop's WSOL ATA when that hop is not native. `.SolOut(hop.SolWSOL)` wraps the last hop's native proceeds (`.WSOLAccount` or derived ATA). Default `SolAsEmitted` leaves the venue CPI form as-is.
 
-`solfunding.Wrap` remains a **fixed-lamports** BeforeRoute prelude; hop-to-hop conversion is compile.
+**ATA create is not SolIn's job.** Wrap only does transfer + `SyncNative`. For a route-node WSOL ATA use `AtaPolicy(Create*)` or mark `RouteNode.Exists=true`. (`SolOut` to a WSOL ATA that is not a route node still emits one `CreateIdempotent`.)
+
+`solfunding.Wrap` remains a **fixed-lamports** BeforeRoute prelude (has its own create / `SkipCreateATA`); hop-to-hop conversion is compile.
 
 ### SolFunding (WSOL wrap / unwrap)
 
@@ -114,7 +116,8 @@ Atomic cycle (e.g. two Jupiter legs A→B→A): you still need a **real** off-ch
 - Register **arbcheck first** so AfterRoute (reversed) asserts after tips/fees
 - `mevtip.New(receiver, lamports)` — literal System transfer in `AfterRoute`
 - `mevtip.ShareNative(receiver, bps).WithMax(cap).WithWSOL(wsol)` — tip floor(native profit × bps / 10000); loss ⇒ 0 tip (does not revert). Caps at current native lamports. Use `arbcheck` for a hard floor.
-- `feehook.Fixed` / `ProceedsBPS` / `AtNode(...).WithFixed` / `AtNode(...).WithTokenBPS` — **one fee kind per Feature**. Combine with two `.Feature(...)` calls.
+- `feehook.Fixed` / `ProceedsBPS(receiver, bps).WithWSOL(wsol)` / `AtNode(...).WithFixed` / `AtNode(...).WithTokenBPS` — **one fee kind per Feature**. Combine with two `.Feature(...)` calls.
+- `ProceedsBPS` = floor(bps × saturating native(+WSOL) profit / 10000); loss ⇒ 0 fee (no revert). Cap at current native lamports. Use `.WithWSOL` on wrap/unwrap routes (same idea as `mevtip.ShareNative`).
 - AfterRoute order is **reversed** within Settlement: want Fixed then Proceeds ⇒ `Feature(ProceedsBPS(...)).Feature(Fixed(...))`.
 - Mid-graph `AtNode` order follows registration (not reversed): want Fixed then TokenBps ⇒ `Feature(AtNode.WithFixed).Feature(AtNode.WithTokenBPS)`.
 

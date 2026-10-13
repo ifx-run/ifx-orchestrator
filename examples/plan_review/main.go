@@ -13,6 +13,7 @@ import (
 
 	"github.com/gagliardetto/solana-go"
 	"github.com/ifx-run/ifx-orchestrator/compile"
+	"github.com/ifx-run/ifx-orchestrator/feature"
 	"github.com/ifx-run/ifx-orchestrator/feature/arbcheck"
 	"github.com/ifx-run/ifx-orchestrator/feature/feehook"
 	"github.com/ifx-run/ifx-orchestrator/feature/gassponsored"
@@ -191,11 +192,12 @@ func main() {
 		},
 		{
 			Name: "12_single_hop_sol_in_wrap",
-			Want: "SolIn(Native)：CreateATA + System transfer(AmountIn) + SyncNative + venue（无 ifx）",
+			Want: "AtaCreate + SolIn(Native)：WSOL/out CreateATA 各一次，再 transfer+SyncNative+venue（无 ifx；wrap 不再重复 create）",
 			Build: func() (*compile.Plan, error) {
 				return orchestrator.New(nil, w.user).
 					AmountIn(10_000_000).
 					MinAmountOut(1).
+					AtaPolicy(feature.AtaCreateOnly).
 					SolIn(hop.SolNative).
 					Hop(w.hopWSOLToB()).
 					Build()
